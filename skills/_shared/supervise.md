@@ -16,7 +16,12 @@ calling skill's `references/driver.md`:
 | §6i | here | close the sweep |
 | §7, §8 | here | arm the loop, report |
 
-Reread §0 (in `SKILL.md`) before every sweep.
+Reread §0 (in `SKILL.md`) before every sweep. Every sweep still reads the state file and proves
+identity before steering (§6b); what a quiet sweep skips is the rest. For a lane whose
+`state_change_seq`, `mtime`, branch HEAD and `DONE` marker all match what the last sweep recorded,
+the compact probe is the whole evidence: do not re-read long files that have not changed or print
+whole command outputs, and do not reload this file or the driver while their full text is still in
+the session's context.
 
 ## The probe contract
 
@@ -90,11 +95,28 @@ result on its merits — but it must surface in the PR body (§6f) and the §8 r
 If a lane claims done but fails any of these, send a corrective prompt and keep it open. Never
 report a half-finished lane as complete.
 
-**Commit granularity is a report line, not a gate.** Compare the commit count against the checklist
-length; a multi-item lane that produced a single commit ignored §5b's policy. Record it and surface it
-in §8, but do **not** hold the lane back and never ask the agent to rewrite history to fix it —
-amending or rebasing an already-verified branch risks the work itself, which costs far more than an
-ugly history. Coarse commits are a note on the PR, not a reason to redo it.
+**Check once, against what is actually there.** Read the lane's real diff
+(`git -C <checkout> diff <base>...<branch>`) yourself — it is what you are accepting — and run each
+confirmed check once against the lane's HEAD: not the whole baseline a second time by default (run
+a check on the base only to tell a pre-existing failure from a new one), and never again just to
+reformat its output. Record each criterion as passed, failed in this run, not run (with why), or
+already failing before this lane (with the evidence) — keep the four apart in the state file and in
+§8, and never silently drop a check the user explicitly asked for. A pre-existing failure is not a
+pass: one that blocks a criterion is escalated, not waved through. Record the result against the
+HEAD you checked (`checked_sha`). A later sweep — timer tick or notify-back — reuses it only while
+that HEAD, a clean tree, the confirmed criteria and the environment and dependencies they ran
+against are all unchanged; the `git status --porcelain` check above still runs every time, and
+uncommitted changes at the same SHA void a cached pass. Anything else reopens verification — a new
+commit, or a cause outside the tree that the lane reports fixed, with its evidence; a lane still
+failing with nothing changed is steered per the driver's §6d, never re-verified sweep after sweep.
+
+**Commit shape is a report line, not a gate.** Judge each commit as §5b defines it — a complete
+change a reviewer can read and a `git revert` can take out in one piece — not by its count against
+the checklist: one commit is fine for a small task or when the user asked for one. A commit that
+mixes unrelated changes, or cannot be reverted on its own, is what to record and surface in §8, but
+do **not** hold the lane back and never ask the agent to rewrite history to fix it — amending or
+rebasing an already-verified branch risks the work itself, which costs far more than an ugly
+history. Coarse commits are a note on the PR, not a reason to redo it.
 
 Only a lane that passes **every** one of these becomes phase `verified`, and only a `verified` lane is
 eligible for §6f. Nothing unverified is ever pushed — that is the whole reason this step runs first.
@@ -114,6 +136,14 @@ Publishing is **idempotent**. It runs on every sweep until it succeeds, so recor
 
 **1. Preconditions — degrade with a recorded reason, never with a guess.** Re-read the §2 preflight:
 
+- the user confirmed local-only delivery (§3 `delivery`) → push nothing and open no PR. If that
+  delivery names a local step for you to run, run exactly that step — locally, never rewriting
+  history. If it does not complete cleanly, leave it undone and record `escalated` with the error
+  and the exact command: the lane is awaiting-user, and its delivery is not complete. A step the
+  user keeps for themselves is reported as agreed and printed in §8. Once the confirmed delivery is
+  complete, leave the lane `verified` and record `local-only delivery (confirmed)` in the field a
+  degrade reason uses: nothing degraded, but that recorded reason is what makes the lane terminal
+  (step 5);
 - no `origin` → nothing to push to; leave the lane `verified`, report it as local-only;
 - `gh` missing or unauthenticated, or `--no-pr` → do step 2, then stop and print the exact
   `gh pr create` command for the user;
@@ -206,7 +236,9 @@ blocked. That is what keeps 5 minutes load-bearing. **The less autonomous the ag
 timer *is* the engine** — the driver's §6c says which regime it is in.
 
 Tell the user in Chinese that it is armed and how to stop it. Each tick is exactly one §6 sweep; a
-tick landing right after a notify-back sweep is harmless — sweeps are idempotent. A `--resume` sweep
+tick landing right after a notify-back sweep is harmless — sweeps are idempotent, and it re-runs no
+verification §6e lets it reuse (`checked_sha`). The timer and the notify-back are the whole heartbeat:
+add no second, model-driven one on top. A `--resume` sweep
 in a session with no armed loop re-arms it whenever non-terminal lanes remain (unless the run's
 recorded flags say `--no-loop`) and re-records `orchestrator_pane` as the current pane — that is how
 a run whose original session died gets its supervision back (§2).
@@ -219,8 +251,9 @@ prompt) is rejected as `agent_blocked` and never retried (§5b) — so when the 
 
 Stop the loop once every lane is terminal or awaiting-user, and say which lanes wait on what.
 Terminal means `published`, `failed`, user-paused, or `verified` with a recorded reason why §6f
-could not publish it; awaiting-user means a recorded `escalated` the user has not yet answered — a
-lane whose work is done but whose branch is still unpushed is **not** terminal, and the loop is what
+did not publish it — a confirmed local-only delivery included; awaiting-user means a recorded
+`escalated` the user has not yet answered — a lane whose work is done but whose branch is still
+unpushed is **not** terminal unless its confirmed delivery is local-only, and the loop is what
 eventually gets it out.
 
 Do not busy-wait inside one turn instead: a sweep is cheap, but a blocking sleep loop burns the Bash
@@ -230,15 +263,17 @@ tool's ceiling and holds the session hostage.
 
 ## §8 Report
 
-Per lane: 分支, checkout 路径, 状态, 已完成/剩余清单项, commit 数（§6e 判定粒度过粗的，在这里标注一下）,
-**验收标准逐条结果**（每条：通过/未通过/无法机械验证时给依据）, 该 agent 的运行情况（driver 的 §6a
-报的状态字段、token/用量、有无暂停 / 限流 / 阻塞经历；驱动方式降级过的写明原因）,
+Per lane: 分支, checkout 路径, 状态, 已完成/剩余清单项, commit 数（§6e 判定提交混杂、无法整体回退的，在这里标注一下）,
+**验收标准逐条结果**（每条：通过 / 本次未通过 / 未运行（写明原因）/ 本 lane 之前已失败（给依据）；无法机械验证时给依据）,
+该 agent 的运行情况（driver 的 §6a 报的状态字段、token/用量、有无暂停 / 限流 / 阻塞经历；驱动方式降级过的写明原因）,
 是否偏离已确认的实施计划（有则一句话说明偏在哪、为什么）, compaction 次数,
-**PR 链接**（未开成的写明原因，别留空）.
+**PR 链接**（未开成的写明原因，别留空；本地交付的写明已完成的本地步骤）.
 
 Name the agent and version once at the top, and say plainly which side of the line each thing is on:
-you **did** push the verified branches and open their PRs (§6f); you did **not** merge anything and
-did not remove any workspace. Then print — do not run — the follow-up commands:
+you **did** push the verified branches and open their PRs (§6f) — or, for a confirmed local-only
+delivery, pushed nothing and ran only the confirmed local step; you did **not** merge anything
+beyond that step and did not remove any workspace. Then print — do not run — the follow-up commands
+that apply to each lane's delivery:
 
     herdr worktree remove --workspace <ws>             # destroys the checkout AND kills its agent process
     gh pr merge <pr-number> --squash --delete-branch   # per lane, after you have reviewed it

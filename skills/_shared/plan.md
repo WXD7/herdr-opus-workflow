@@ -44,9 +44,10 @@ restoring supervision, though briefs already written keep ringing the old pane �
 what those rings miss. Within a live session, the §7 timer is the backstop for every ring that
 misses.
 
-**Publishing preflight.** A lane finishes with *you* pushing its branch and opening its PR (§6f),
-so settle *now* — before a single workspace exists — whether that will be possible, and record
-each answer in the state file:
+**Publishing preflight.** By default a lane finishes with *you* pushing its branch and opening its
+PR (§6f), so settle *now* — before a single workspace exists — whether that will be possible, and
+record each answer in the state file (a run the user wants delivered locally only needs none of
+them — record that instead):
 
 - does `origin` exist (`git -C <repo> remote get-url origin`);
 - does `gh auth status` succeed, and does `gh repo view --json nameWithOwner -q .nameWithOwner`
@@ -67,6 +68,11 @@ worth one report line in §8, not an abort.
 
 ## §3 Plan the lanes
 
+**Settle what is open first.** Before planning, ask about any unresolved requirement that would
+change the business objective, the boundaries or the acceptance — a plan built around a guess only
+moves the question later. In the plan you present, keep what the user has confirmed apart from what
+is still pending; a pending requirement is never planned as if it were settled.
+
 Split the task text on numbered items, newlines, or `;` — whichever the user actually used.
 
 Then **group** them. This is the most consequential judgement in the skill:
@@ -80,6 +86,12 @@ Then **group** them. This is the most consequential judgement in the skill:
 - When lanes > 4, warn the user that all lanes share **one account for this agent**, so its rate
   limits are shared and can throttle every lane at once. The driver names what that limit looks like
   when it is hit.
+
+**Scale the work to the risk.** Planning depth, investigation and lane count follow the task's risk
+and uncertainty, not a fixed template. A small cleanup, a docs change or a well-understood fix
+defaults to one lane, the dependency checks it actually needs, and your one independent verification
+(§6e) — not a repo-wide survey, a coverage inventory, a pre-review of the checklist, or layers of
+independent review. Widen only for a real dependency or a real risk, and say why in the plan.
 
 Per lane derive:
 
@@ -123,9 +135,11 @@ Per lane derive:
   this top to bottom and records any forced deviation in `.dispatch/progress.md` (§5b).
 - `acceptance` — the lane's acceptance criteria (presented to the user as 验收标准), authored by
   **you**: the explicit, checkable criteria that define done. Build them from the repo's real check
-  commands — found in `package.json` / `Makefile` / `justfile` / CI config, never invented — each
-  with its expected outcome, plus behavioural criteria stated concretely enough to verify from the
-  diff or a command. A repo with no automated checks gets criteria over tree state and diff content
+  commands — found in `package.json` / `Makefile` / `justfile` / CI config, never invented — chosen
+  by what the change actually affects rather than the whole suite by reflex, each with its expected
+  outcome, plus behavioural criteria stated concretely enough to verify from the diff or a command.
+  Choosing narrowly never drops a quality or business-safety requirement the task carries, or a
+  check the user explicitly asked for. A repo with no automated checks gets criteria over tree state and diff content
   instead, plus an explicit "no automated checks in this repo". These criteria are what the lane
   works toward, what gates its DONE (§5b), and what §6e later re-runs with its own hands — write
   nothing here you cannot check yourself.
@@ -145,7 +159,11 @@ sees all of them before anything is created:
   `验证通过后自动 push 到 origin，并对 <pr-base> 开 PR（ready for review，会触发 CI 和 reviewer 通知）`,
   or the degraded form the §2 preflight actually found (`--draft` 开草稿 PR / `--no-pr` 只 push，PR
   命令会打印出来 / `gh 未登录，只 push，PR 命令会打印出来` / `PR base 不在 origin 上，只 push，PR 命令
-  留待你补 base` / `无 origin，只能本地提交`). Never promise a PR the preflight says you cannot open.
+  留待你补 base` / `无 origin，只能本地提交`). When the user asked for local-only delivery, say
+  `只做本地交付：验收通过并完成约定的本地提交／整合即结束，不 push、不开 PR`, naming that local step
+  and who runs it. Record the mode as the run's `delivery` in the state file — it is this run's
+  choice, never a default carried over from an earlier run. Never promise a PR the preflight says
+  you cannot open.
 
 Then ask once with `AskUserQuestion`: 按此派发 / 计划或验收标准要改（在补充里说明改哪里） / 合并成
 更少的 lane / 我来调整. Create nothing before that answer. The confirmation covers the lane split,
@@ -153,6 +171,14 @@ the plan **and** the acceptance criteria together — the confirmed `plan` and `
 verbatim into each lane's brief (§5b), so dispatching without this answer would dispatch a direction
 nobody agreed to. If the user asks for changes, rework the plan and ask again; do not start a
 partial dispatch of the lanes they did not question.
+
+One case skips the question: the user has already authorized this exact work with a clear scope —
+typically a small task whose objective, boundaries, acceptance and delivery the request itself
+settles, with nothing pending. Then present the plan as the record of what will run, say you are
+proceeding on that authorization, and dispatch; the plan you presented is what §5b quotes. Asking
+again for an authorization already given only stalls the run. It covers that scope and nothing
+wider: a pending requirement, or anything the plan adds beyond what the user wrote, still goes
+through the question.
 
 ---
 
@@ -204,21 +230,24 @@ silently re-designing; the **checklist** as `- [ ]` items; the **acceptance crit
 criteria exactly as confirmed, with the framing that they, not the checklist ticks, define done:
 DONE is written only when every criterion verifiably holds; **boundaries** (work only in this
 checkout, never `cd` to the main checkout, never touch another lane's files, never push, never
-merge, never open a pull request — committing is where your job ends, and the orchestrator publishes
-the branch once it has verified it); and the **commit policy** below, quoted into the brief in full.
+merge, never open a pull request — committing is where your job ends, and the orchestrator delivers
+the branch the way the user confirmed once it has verified it); and the **commit policy** below,
+quoted into the brief in full.
 
-> **Commit policy.** Commit continuously as you work, never as one lump at the end. Each commit is one
-> coherent unit — a module, a file, a self-contained behaviour change — and each message follows
-> Conventional Commits: `<type>(<scope>): <description>`.
+> **Commit policy.** Organize commits as complete changes: each commit is one coherent unit that a
+> reviewer can read on its own and a future `git revert` can take out in one piece, and each message
+> follows Conventional Commits: `<type>(<scope>): <description>`. Commit each unit once it is
+> complete, rather than holding a multi-part task for one lump at the end.
 >
-> Pick the granularity by asking what a reviewer would want to read on its own and what a future
-> `git revert` would need to take out in one piece. Concretely: a checklist item is at least one
-> commit, and a large one is several; a refactor and the behaviour change that follows it are separate
-> commits; a new module lands separately from the code that starts calling it; unrelated fixes you
-> notice along the way never ride along inside another commit. Stage only the paths belonging to the
-> unit you are committing — `git add <paths>`, never `git add -A`. Do not amend or rebase a commit you
-> already made; correct it with a follow-up commit instead, because the orchestrator may already have
-> read the history.
+> Size follows the change, not the checklist: a small task may be a single commit, there is no
+> minimum number of commits per checklist item, and the count says nothing about the quality of the
+> work. If the user asked for a single commit, that wins — make it once the whole change holds.
+> Otherwise a refactor and the behaviour change that follows it are separate commits, a new module
+> lands separately from the code that starts calling it, and unrelated fixes you notice along the
+> way never ride along inside another commit. Stage only the paths belonging to the unit you are
+> committing — `git add <paths>`, never `git add -A`. Do not amend or rebase a commit you already
+> made, or any history before it; correct it with a follow-up commit instead, because the
+> orchestrator may already have read the history.
 >
 > **`.gitlock` protocol** (from `~/CLAUDE.md`), pinned to the **main checkout's absolute path**
 > `<repo>` — each worktree has its own root, so a per-worktree lock would serialize nothing: before
