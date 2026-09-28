@@ -16,8 +16,8 @@ calling skill's `references/driver.md`:
 | §6i | here | close the sweep |
 | §7, §8 | here | arm the loop, report |
 
-Reread §0 (in `SKILL.md`) before every sweep. Every sweep still reads the state file and proves
-identity before steering (§6b); what a quiet sweep skips is the rest. For a lane whose
+Apply §0 (in `SKILL.md`); reload rules only after context loss or an authorized version change.
+Every sweep reads run state and proves identity before steering (§6b). For a lane whose
 `state_change_seq`, `mtime`, branch HEAD and `DONE` marker all match what the last sweep recorded,
 the compact probe is the whole evidence: do not re-read long files that have not changed or print
 whole command outputs, and do not reload this file or the driver while their full text is still in
@@ -58,7 +58,7 @@ session) still matches the one recorded in the state file (§6a). On a mismatch,
 diagnose — the three cases look alike and only one is yours to act on:
 
 - the name resolves to an agent in some *other* workspace → a stranger re-claimed a released name.
-  Never touch it (§0.4); surface the lane.
+  Never touch it (§0); surface the lane.
 - the name resolves in the lane's own recorded pane, under a different id → not necessarily a
   stranger: the id also changes when a fresh thread starts in the same agent process (the driver's
   §6h restart recipe — or the user's own hand). If the state file shows a restart in flight, finish
@@ -73,7 +73,8 @@ diagnose — the three cases look alike and only one is yours to act on:
 input this sweep sends a lane — a slash command, a steering or continuation prompt — do ONE
 `herdr agent read <lane> --source visible`. If a selection list or modal is parked there, send
 nothing: a prompt submitted at a parked list presses its highlighted default. Resolve it first
-(§6d/§6g).
+(§6d/§6g). Preserve existing input drafts. Queuing into an active turn is allowed only by the
+driver's explicit non-interrupting update rule; never infer support from an empty input box.
 
 ---
 
@@ -84,39 +85,36 @@ nothing: a prompt submitted at a parked list presses its highlighted default. Re
     git -C <checkout> status --porcelain              # must be empty
     git -C <checkout> log --oneline <base>..<branch>  # must be non-empty
 
-plus the **acceptance criteria, re-run by you**: execute each §3-confirmed criterion's command from
-TASK.md in the lane's checkout and require its expected outcome; judge the non-mechanical criteria
-from the diff and `.dispatch/progress.md`. The lane already claims they pass — that claim is what
-you are checking, not what you are accepting. Any agent-side "objective complete" signal the driver
-reports is corroboration that the agent considers itself done, never a substitute for the criteria.
-Also read `progress.md` to confirm every checklist item is ticked and to see whether the lane
-recorded a deviation from the §3-confirmed plan. A recorded deviation is not a failure — judge the
-result on its merits — but it must surface in the PR body (§6f) and the §8 report, never silently.
-If a lane claims done but fails any of these, send a corrective prompt and keep it open. Never
-report a half-finished lane as complete.
+**Independently judge every criterion.** Read the actual diff
+(`git -C <checkout> diff <base>...<branch>`) and `progress.md`, including checklist and deviations.
+Personally rerun the §3 critical criteria: the core user path, changed high-risk boundaries and
+any check explicitly requiring supervisor execution. Other checks may use inspected evidence from
+workers or reviewers only when command, result, exact HEAD, clean tree, criteria and relevant
+environment/dependencies match; missing provenance or a bare claim of success requires a rerun.
+Baseline findings explain existing defects, but do not establish a pass on changed code. Reuse
+existing baselines; rerun them only to resolve a real new-versus-existing failure question.
 
-**Check once, against what is actually there.** Read the lane's real diff
-(`git -C <checkout> diff <base>...<branch>`) yourself — it is what you are accepting — and run each
-confirmed check once against the lane's HEAD: not the whole baseline a second time by default (run
-a check on the base only to tell a pre-existing failure from a new one), and never again just to
-reformat its output. Record each criterion as passed, failed in this run, not run (with why), or
-already failing before this lane (with the evidence) — keep the four apart in the state file and in
-§8, and never silently drop a check the user explicitly asked for. A pre-existing failure is not a
-pass: one that blocks a criterion is escalated, not waved through. Record the result against the
-HEAD you checked (`checked_sha`). A later sweep — timer tick or notify-back — reuses it only while
-that HEAD, a clean tree, the confirmed criteria and the environment and dependencies they ran
-against are all unchanged; the `git status --porcelain` check above still runs every time, and
-uncommitted changes at the same SHA void a cached pass. Anything else reopens verification — a new
-commit, or a cause outside the tree that the lane reports fixed, with its evidence; a lane still
-failing with nothing changed is steered per the driver's §6d, never re-verified sweep after sweep.
+For user-facing work, verify meaningful output and the promised interaction path. API-only
+evidence cannot stand in for agreed UI acceptance. Check failure/retry outcomes across affected
+surfaces. Judge scoped structural improvements by the §3 before/after evidence, not line counts.
+An implementation deviation may be justified; lowering scope, quality or acceptance requires user
+agreement. Disclose deviations, substitutes and gaps in §8 and any PR. Failed or missing required
+acceptance keeps the lane open; give one focused correction through the driver.
 
-**Commit shape is a report line, not a gate.** Judge each commit as §5b defines it — a complete
-change a reviewer can read and a `git revert` can take out in one piece — not by its count against
-the checklist: one commit is fine for a small task or when the user asked for one. A commit that
-mixes unrelated changes, or cannot be reverted on its own, is what to record and surface in §8, but
-do **not** hold the lane back and never ask the agent to rewrite history to fix it — amending or
-rebasing an already-verified branch risks the work itself, which costs far more than an ugly
-history. Coarse commits are a note on the PR, not a reason to redo it.
+**Record evidence once.** For each criterion store outcome, command/evidence, source (your rerun or
+reviewed evidence), `checked_sha` and relevant environment. Distinguish **passed / failed this run /
+not run (why) / pre-existing failure (evidence)**. A pre-existing failure is not a pass; escalate if
+it blocks a required criterion. Never repeat checks just for report formatting. A later sweep can
+reuse acceptance only at the same HEAD with a clean tree, unchanged criteria and environment;
+always recheck tree status. Changed code or environment invalidates the overall cached pass:
+rerun affected checks; retain an unaffected criterion's older evidence only after independently
+checking its dependencies and recording that rationale and original revision. Unchanged failures go to the driver's §6d,
+not another identical test run. Delivery after integration needs checks relevant to the combined
+tree; lane results alone do not establish integration success.
+
+**Commit shape is a report line, not a gate.** Note mixed or non-revertible changes, but do not
+hold delivery or ask for rewritten history merely to improve commit shape. One coherent commit
+is sufficient for a small task or a user-requested single commit.
 
 Only a lane that passes **every** one of these becomes phase `verified`, and only a `verified` lane is
 eligible for §6f. Nothing unverified is ever pushed — that is the whole reason this step runs first.
@@ -125,11 +123,8 @@ eligible for §6f. Nothing unverified is ever pushed — that is the whole reaso
 
 ## §6f Publish a verified lane — push the branch, open the pull request
 
-**You publish; the lane never does.** The agents are briefed "never push, never merge, never open a
-PR" (§5b) precisely so that the one operation which leaves the worktree and reaches a shared remote
-stays behind §6e's verification, in the hands of the one participant that has actually checked the
-work. A lane that asks to push is still an anomaly, not a shortcut — surface it per §6g, never
-approve it.
+**You publish; the lane never does.** Delivery stays behind §6e verification. A worker asking to
+push has crossed its brief's boundary; surface it under §6g rather than approving it.
 
 Publishing is **idempotent**. It runs on every sweep until it succeeds, so record `pushed_sha`,
 `pr_number`, `pr_url` and `publish_attempts` in the state file and skip whatever is already done.
@@ -173,18 +168,10 @@ head branch that already has a PR, and a sweep that treats that error as failure
       --title '<conventional-commit title>' \
       --body-file ~/.claude/<skill-name>/<run-id>/<lane>-pr.md
 
-- **Every argument is explicit, and that is load-bearing.** `gh pr create` prompts interactively for
-  anything it cannot infer — and on a fork it asks which repo to target even when it can. An
-  interactive prompt inside a non-interactive Bash call hangs until the timeout, so `--repo` (from
-  `gh repo view --json nameWithOwner -q .nameWithOwner`), `--base`, `--head`, `--title` and
-  `--body-file` are all mandatory here. Use `--body-file`, not `--body`: a multi-line body through the
-  shell is where quoting breaks.
-- **Ready for review is the default**, so no `--draft` flag: §6e has already established that the
-  tree is clean, the commits are real and the repo's own checks pass, and a PR nobody can review
-  without first clicking a button is a PR that sits. Opening ready does page reviewers and CODEOWNERS
-  and does start CI, which is the point — but it also means the provenance line in the body is the
-  only thing telling them an agent wrote this, so never drop it. Pass `--draft` to land the run
-  quietly instead.
+- Supply all shown arguments, including `--repo` from §2, to avoid an interactive prompt hanging
+  a non-interactive call. Use `--body-file` for literal multiline text.
+- **Ready for review is the default** and may trigger CI and reviewer notifications, as disclosed
+  in §3. Use `--draft` only when requested; it does not change the verification requirement.
 - **Title:** Conventional-Commits shaped, derived from the lane's objective — the commit subject when
   the lane produced exactly one commit, otherwise `<type>(<scope>): <objective>`, with the type
   agreeing with the branch's type prefix (a `feature` branch normalizes to `feat`). No run ids, lane
@@ -223,31 +210,22 @@ such lanes as awaiting-user.
 
 ## §7 Arm the recurring loop
 
-Unless `--no-loop`, after dispatch invoke the `loop` skill with `5m` and this skill's own `--resume`
-invocation (the slash form that actually resolves here — `/dispatch-<agent> --resume`, or the
-plugin-qualified `/herdr-dispatch:dispatch-<agent> --resume`), so supervision continues on a timer
-without holding the session.
+Unless `--no-loop`, arm one `loop` job with this skill's resolving `--resume` invocation, e.g.
+`/herdr-dispatch:dispatch-<agent> --resume`. Use the driver's cadence; absent one, use `5m`.
+Record job id, interval and reason. Adjust only when the driver's condition changes: update the
+existing job if supported, otherwise cancel that recorded job before replacing it. Never stack
+timers; if cancellation is uncertain, report it instead of creating another.
 
-The timer is the **fallback** for a finished lane — that announces itself through the §5b
-notify-back — but it is the **only** thing that recovers everything which arrives silently: stalls,
-blocked panes, hot lanes needing compaction, a lane that stopped mid-work and needs the next nudge,
-a rate limit that parked the agent, and any notify-back that was rejected while this session was
-blocked. That is what keeps 5 minutes load-bearing. **The less autonomous the agent, the more the
-timer *is* the engine** — the driver's §6c says which regime it is in.
+Notify-back triggers timely completion checks. The timer recovers missed notifications, silent
+blocks, stalls and idle unfinished work; preserve that fallback. Each event/tick performs one
+sweep with compact state, reads only changed evidence, and reuses valid acceptance (§6e). A
+duplicate wake with no new evidence or due recovery only records the no-op. These rules reduce
+work after wake-up, not model calls already made; Markdown does not implement zero-model gating.
 
-Tell the user in Chinese that it is armed and how to stop it. Each tick is exactly one §6 sweep; a
-tick landing right after a notify-back sweep is harmless — sweeps are idempotent, and it re-runs no
-verification §6e lets it reuse (`checked_sha`). The timer and the notify-back are the whole heartbeat:
-add no second, model-driven one on top. A `--resume` sweep
-in a session with no armed loop re-arms it whenever non-terminal lanes remain (unless the run's
-recorded flags say `--no-loop`) and re-records `orchestrator_pane` as the current pane — that is how
-a run whose original session died gets its supervision back (§2).
-
-`--no-loop` disarms only the timer; the briefs still carry the notify-back, but that signal alone is
-lossy — a ring landing while this session is blocked (an open `AskUserQuestion`, a permission
-prompt) is rejected as `agent_blocked` and never retried (§5b) — so when the user passed
-`--no-loop`, tell them in Chinese that a missed ring is recovered only by re-running this skill with
-`--resume` by hand, and that a lane which stops mid-work stays stopped until such a sweep nudges it.
+Tell the user in Chinese the interval, possible recovery delay and how to stop the loop. On a
+resumed supervisor, record its current pane and re-arm only if no loop exists and actionable lanes
+remain. `--no-loop` keeps notify-back but a missed ring or silently idle worker then requires a
+manual `--resume`. Add no second model-driven heartbeat. Do not busy-wait inside a sweep.
 
 Stop the loop once every lane is terminal or awaiting-user, and say which lanes wait on what.
 Terminal means `published`, `failed`, user-paused, or `verified` with a recorded reason why §6f
@@ -255,9 +233,6 @@ did not publish it — a confirmed local-only delivery included; awaiting-user m
 `escalated` the user has not yet answered — a lane whose work is done but whose branch is still
 unpushed is **not** terminal unless its confirmed delivery is local-only, and the loop is what
 eventually gets it out.
-
-Do not busy-wait inside one turn instead: a sweep is cheap, but a blocking sleep loop burns the Bash
-tool's ceiling and holds the session hostage.
 
 ---
 

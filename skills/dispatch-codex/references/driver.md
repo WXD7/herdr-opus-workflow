@@ -9,26 +9,27 @@ compatibility only (`../SKILL.md`); every lane here is **Claude Code**, launched
 `<ROOT>` below is the workflow project that owns the lane environment and the probe helper:
 `/Users/wangxian/Documents/ChatGPT/开发/herdr-workflow-fresh-20260926`.
 
-How each claim is marked:
-
-- **(verified)** — confirmed on this machine for Claude Code **2.1.280**: that the §5c launch flags
-  are supported, and the transcript facts §6a relies on — its location, the `sessionId` / `cwd` /
-  `isSidechain` fields on its records, and `message.stop_reason: "end_turn"` ending a finished turn,
-  read off real transcripts.
-- **(herdr, verified)** — herdr CLI behaviour carried over from the codex-era driver; it does not
-  depend on which agent runs in the pane.
-- **(CLI)** — the installed `herdr agent` command lists `claude` among supported kinds; actual
-  Claude startup under Herdr is not yet exercised by this adapted driver.
-- **(unverified)** — not exercised end-to-end with Claude under herdr. Handle its failure; never
-  assume it works.
-
-§2 records the version it actually finds; a mismatch is a report line, not an abort. Nothing codex
-owned carries over as fact: there is no rollout file and no goals database. Claude Code does have a
-native `/goal` of its own, but it is not Codex's, and this driver does not use it yet (§5c).
+**(verified)** covers local Claude Code **2.1.280** launch flags and the transcript fields used
+below; **(herdr, verified)** covers agent-independent Herdr behavior. The adapted launch and
+ordinary supervision also ran in `tm173y` (evidence under `<ROOT>/evidence/ponora-inbound-20260927/`).
+**(unverified)** marks recovery/UI behavior not established by that run: inspect its actual result.
+Record the installed CLI version; a mismatch is a report line, not an abort. No Codex rollout or
+goals database applies, and this driver does not enable native `/goal`.
 
 ---
 
 ## §5a Pre-flight the pane
+
+**Workflow version.** On a fresh run, record `state.workflow`: actual plugin path, Git commit,
+`git describe --tags --match 'workflow-v*' --always`, dirty status, and SHA-256 of
+`skills/dispatch-codex/{SKILL.md,references/driver.md}` and `skills/_shared/{plan.md,supervise.md}`.
+Resolve the paths from the loaded plugin,
+not a similarly named cache. Never label dirty files as an unchanged release. On each resume,
+compare these four hashes using a compact local check, without loading their bodies. Missing
+provenance or changed hashes requires a user-approved version handoff: report and stop only the
+supervisor's timer/steering, leaving workers untouched. Do not overwrite the recorded version or
+reuse old acceptance blindly. A new version normally starts with a fresh supervisor/run; an
+authorized handoff reloads all four files and records old/new versions and retained evidence.
 
 A fresh worktree is not a working environment: no `node_modules/`, no `.env`, no `.venv`, because
 those are untracked or ignored.
@@ -113,32 +114,14 @@ abandoned uuids in the lane's entry for the report.
       --model claude-opus-5-5 --effort max --permission-mode auto \
       --settings '{"ultracode":false}' --session-id <uuid>
 
-Why each part:
-
-- `--kind claude` (CLI) — herdr's Claude agent kind; it runs `claude` through the pane's shell,
-  where §5a put the LangWatch wrapper first on `PATH`. The state file's `agent_kind` is `claude`;
-  only the skill's name is codex.
-- `--model claude-opus-5-5 --effort max` (verified) — the fixed execution profile. Never substitute a
-  model; if this one is unavailable, the lane stops and you report it — no silent downgrade.
-- `--permission-mode auto` (verified) — the fixed permission mode. Claude Code's own permission
-  checks stay on; which calls it clears by itself and which it raises as a prompt in the pane is
-  Claude Code's decision and is not characterised here (unverified). Every prompt that surfaces is
-  §6g's. This is the approval posture the user asked to keep, so pass **no** bypass on top of it —
-  no `--dangerously-skip-permissions`, no `--allow-dangerously-skip-permissions`, no other
-  `--permission-mode`, no permission rules through `--settings` or `--allowedTools`. It is not a
-  sandbox either: the worktree plus §5b's boundaries are the containment.
-- `--settings '{"ultracode":false}'` (verified) — part of the same fixed profile; pass it verbatim and
-  add nothing to it.
-- `--session-id <uuid>` (verified) — the uuid you just recorded, so the transcript lands at a path
-  §6a computes instead of searching for.
-- `--timeout 120000` — startup plus any MCP servers the checkout configures can outlast herdr's 30 s
-  default.
-- Nothing else. No positional prompt and no `-p`/`--print` (headless): the lane is primed through
-  `herdr agent prompt` below, after the input box has been seen, so a startup dialog cannot eat the
-  objective. No `--continue` or `--resume` on a first launch. No `--agent`, `--agents`,
-  `--system-prompt*` or `--append-system-prompt*`: lanes use Claude Code's native Agent tool as it
-  comes. No worktree option of Claude Code's own — the lane lives in the herdr-created checkout
-  (`references/plan.md` §4). No absolute executable path.
+Use the command as written: the prepared shell resolves the LangWatch wrapper, the recorded UUID
+identifies the transcript, and 120 s allows for MCP startup. Opus 5.5/max and `ultracode:false`
+are fixed; unavailable model means stop, not downgrade. Keep `--permission-mode auto`, whose
+dialogs are handled by §6g; it is not a filesystem sandbox. No bypass flags, alternate permission
+mode, or permission-widening settings/`--allowedTools`. No positional/headless prompt: verify an
+empty input box before priming. No `--continue`/`--resume` on first launch, custom agent/system
+prompt, absolute executable path, or Claude-owned worktree; use native Agent delegation inside
+the recorded Herdr checkout.
 
 **The three lines §3 owes the user, in this driver's words:**
 
@@ -147,10 +130,9 @@ Why each part:
   需要确认的调用会在 pane 里弹出，由监督循环按 §6g 处理（lane 会停到下一轮 sweep），越出本 lane
   checkout 的一律交给你。auto 不是沙箱，worktree 是唯一隔离`（`--no-yolo` 就是这个唯一姿态，`--yolo`
   已在 §1 拒绝）;
-- how the lane is driven — `以单次 prompt 启动。turn 结束时若还有后台命令／子 Agent／通知未回，结果
-  到达后 Claude Code 可能自行续上；真正空闲而未完成的 lane 由监督循环（默认每 5 分钟）读 progress.md
-  续跑。Claude Code 自带原生 /goal，但当前已验证的 driver 暂用普通 prompt、不设置 /goal，所以真正停下
-  的未完成 lane 最长要等一个 sweep 间隔才继续`;
+- how the lane is driven — `普通 prompt 启动，后台工具或子 Agent 的结果可触发续跑；确实空闲且未完成
+  时由主控读取 progress.md 接续。默认 15 分钟兜底，持续正常推进可延至 30 分钟，需要恢复时缩至
+  5 分钟（§6c）；完成通知可提前触发检查，静默停住可能等到下一次巡检。当前不启用原生 /goal`;
 - limits — `所有 lane 共用本机同一个 Claude 官方登录账号，用量限额共享，可能同时卡住所有 lane；本
   driver 读不到机器可读的限流状态，被限流的 lane 表现为停止推进，由防空转计数（§6d）升级给你。上下文
   占用没有可靠数值（used_pct 恒为 null），监督循环不按百分比主动压缩`.
@@ -178,27 +160,14 @@ shell means it did not — read the error it left, and retry once with a **new**
 
     herdr agent prompt <lane> "Read .dispatch/TASK.md in this directory and work through its checklist in order. Keep .dispatch/progress.md updated after every item — assume your context may be compacted at any time and that file is all you keep. Write .dispatch/DONE only when every checklist item is done, every acceptance criterion in TASK.md verifiably holds and git status is clean, then run the notify-back command TASK.md gives you."
 
-This is the single-prompt priming this plugin already uses for opencode, verbatim. Record the lane
-as phase `implementing`. This is the **nudge-driven** regime that
-`references/supervise.md` §7 refers to: one Claude turn can run many tool calls and sub-agents; a
-turn that ends with background work still pending can be resumed by that work's result, but a lane
-that ends its turn truly idle with work unfinished stays stopped until §6d's continuation prompt. The first
-sweep is also the landing check: a transcript that still does not exist then means the prompt never
-reached Claude — read the pane once and resolve what is there (§6g) before re-sending it, at most
-once.
+Record phase `implementing`. After launching all lanes, do the first landing sweep immediately.
+A missing transcript means priming may not have landed: inspect the pane and resolve it (§6g)
+before resending, at most once. Long turns and pending native subagents are ordinary work;
+only a truly idle unfinished lane needs continuation (§6c/§6d).
 
-**Native `/goal` — present in Claude Code, not used by this driver yet.** Claude Code 2.1.280, the
-version this driver targets, has its own `/goal` (official docs:
-<https://code.claude.com/docs/en/goal>): it keeps a session taking turns until a stated condition
-holds. It is not Codex's — none of Codex's goals database, status names or pause/resume subcommands
-apply — and the check at the end of each turn runs on Claude Code's separate small fast model
-(Haiku by default on the Claude API), not on the lane's Opus 5.5. Pointing that check at another
-model through `ANTHROPIC_DEFAULT_HAIKU_MODEL` also moves Claude Code's other background work, such
-as conversation summarization, onto it. The user has allowed the lightweight evaluator, then asked
-to stop dedicated adaptation/testing and start the business task immediately. Native goal has not
-been integrated or exercised under herdr: this run uses the updated workflow with the plain-prompt
-regime above. Set no `/goal` on a lane, leave that variable alone, and enable no automatic goal
-loop; report this limitation and do not delay business work for another standalone smoke test.
+**Native `/goal` remains disabled.** The user allowed its lightweight evaluator but then asked to
+stop adaptation and begin business work. This driver still uses plain prompts: set no goal, do
+not change `ANTHROPIC_DEFAULT_HAIKU_MODEL`, and do not start another goal smoke test as a prerequisite.
 
 **Relaunching an exited lane** (§6b: the name resolves to nothing) is not a fresh launch: follow
 §6h's resume path — the recorded uuid back through `--resume`, on a pane confirmed to be at a bare
@@ -225,7 +194,7 @@ sessions. Pass `--transcript` only when that path does not exist and one
 `ls ~/.claude/projects/*/<uuid>.jsonl` finds this exact file elsewhere; record the path in the state
 file. Never pick a transcript by recency or by content.
 
-The helper reads only the **tail** (2 MiB, §0.6) and checks that what it reads belongs to this lane:
+The helper reads only the **tail** (2 MiB, §0.2) and checks that what it reads belongs to this lane:
 every record carrying a `sessionId` must carry this uuid, every `cwd` must be the checkout or inside
 it, and only main-thread records (`isSidechain` not true) decide the turn — sub-agent records never
 do. A failed check is `probe: unavailable` with the reason, never a best guess.
@@ -282,18 +251,20 @@ unverified and escalate without prompting, approving or compacting that lane.
 | `hard_fail` | `out_of_room` (§6a), and no §6h recovery recorded in flight | No verified in-place restart exists here: one `/compact` per §6h if its gate allows; otherwise — or if it changes nothing — escalate |
 | `stalled` | `state_change_seq` **and** `mtime` both unchanged ≥ 15 min | Read `--source visible` once: a dialog → §6g; an idle input box over unfinished work → the `idle_incomplete` action; a tool call or sub-agent still visibly running → leave it: a long build, test run or sub-agent is normal work. The same call showing for 60 min is only a point to diagnose and ask the user once in the sweep report — never a timeout: nothing stops, interrupts or fails the call on that clock, and a call still making real progress is not judged by its duration; otherwise escalate; never score as finished |
 | `hot` | `used_pct ≥ 70` **and** `turn_state == complete` | Inert: `used_pct` is always `null` (§6a), so this row never matches — context is left to Claude Code, and the sweep never compacts on a guess |
-| `idle_incomplete` | `agent_status` is `done`/`idle`, `turn_state == complete`, **and** no `DONE` file | **The engine.** Read `progress.md`, send a specific continuation prompt (§6d), record the nudge — unless §6b's guard read shows a background command or sub-agent still running: its result can resume the lane by itself, so send nothing this sweep |
-| `working` | otherwise | Leave it alone |
+| `idle_incomplete` | `agent_status` is `done`/`idle`, `turn_state == complete`, **and** no `DONE` file | Read `progress.md`, send a specific continuation (§6d), record the nudge — unless pending background/subagent work can resume it; then send nothing |
+| `working` | otherwise | No continuation; only a necessary queued update under §6d may be sent |
 
 An `unknown` `agent_status` is an anomaly to surface, never a completion — do not let it fall
 through to `working`'s leave-it-alone. `turn_state == unknown` is surfaced the same way (with
 `last_event`): never read as complete, and if it persists, `stalled` reads the pane.
 
-**`idle_incomplete` is the common case, not the exception.** In the codex goal mode this row was a
-repair path; here, as in `dispatch-opencode`, it is how a truly stopped lane moves on. Expect
-unfinished lanes to match it often, and a stopped lane to wait up to one sweep interval for its next turn — that is
-what §3's second line promised the user, and it is why §7's timer must stay armed. A lane with an
-unanswered `escalated` record gets no continuation from this row or any other (§6d).
+**Cadence for §7:** default `15m`; after two sweeps with healthy autonomous progress on every
+actionable lane, use `30m`. Use `5m` while a launch/recovery/nudge awaits confirmation or observed
+idle turns need frequent continuation; return to `15m` once normal progress resumes. A changed
+cadence affects the next tick, not an unseen event between ticks. Task-specific urgency may justify
+a different interval, recorded with its reason. Notifications still trigger earlier checks.
+Do not presume unfinished lanes are idle; check for pending tools/subagents before nudging.
+User-paused or unanswered `escalated` lanes receive no steering from any row.
 
 One known race, by design: a notify-back can arrive before the ringing lane's final turn closes (the
 brief fires it right after DONE is written, mid-turn), so that lane may still read `working` with
@@ -303,13 +274,21 @@ DONE present — re-check it once at the end of the sweep, or leave it to the ne
 
 ## §6d Steer a lane — writing the continuation prompt
 
-This is the most consequential thing the sweep does in this skill. Every prompt goes through
-`herdr agent prompt <lane> "…"` and is subject to §6b's prompt guard: read the pane first, and if a
-dialog or selection list is parked there, resolve it instead of typing. If the input box already
-holds text, send nothing and escalate — the new prompt would fuse onto it, and clearing the box is
-unverified for Claude (§6h). A lane whose turn is still in flight gets no prompt at all — least of
-all a bare "continue". No native `/goal` is set on these lanes (§5c): never send `/goal` — in
-Claude's syntax or Codex's — or any other codex command, to a Claude lane.
+Every prompt uses `herdr agent prompt <lane> "…"`, after live identity (§6a) and input guards
+(§6b). A draft means no input and a report; a dialog goes to §6g. Never clear the composer, interrupt a running tool,
+or send `/goal`/Codex commands. Ordinary continuations require an idle turn with no pending work.
+
+**Necessary updates may queue during work.** For a user-authorized scope change or concrete
+correctness evidence, persist the change in the existing brief/state and send one concise update
+without interrupting the turn, only when the
+current client is known to support queued prompts and the visible input is empty. The `tm173y`
+review records a successful queued update; other clients need their own evidence. If support is
+unknown, retain the update in state for the next safe idle point and report the delay. Before
+sending record update id, content and attempt; afterward record queued/failed/uncertain, and mark
+absorbed only from transcript/progress evidence. Do not equate delivery with uptake or retry an
+uncertain send. Combine unsent facts, preserve sent content; no duplicate reminders or worker-wide
+broadcast. Check uptake at the next scheduled/event sweep, never poll for it. A completed turn
+that ignored a required update gets one focused correction under the nudge accounting below.
 
 **Read `.dispatch/progress.md` and `git log <base>..<branch>` first.** A bare "continue" burns a turn
 re-deriving state the lane already wrote down. A good continuation prompt names, in one or two
@@ -345,9 +324,8 @@ working, and its counter does not move. Then:
   `progress.md` last said, and report the lane as awaiting-user. Never fire a third identical nudge.
   From then on the lane gets no continuation and no `/compact` from any row until the user answers.
 
-This accounting is also this driver's only answer to rate limits: a lane held by the shared account's
-limits looks like a lane that stopped advancing, and escalates the same way. Never name a limit state
-the probe cannot see.
+Use this accounting for stalled progress under shared limits too; never claim a machine-readable
+rate-limit state the probe cannot see.
 
 **When the lane reports a real blocker** — a missing secret, a broken upstream, a contradiction in
 the task — do not improvise scope. If the answer is inside the §3-confirmed plan (a decision the
@@ -462,4 +440,4 @@ to nothing" (via §5c). In order:
    lane is how a sweep ends up steering a thread that is not the lane's.
 
 If the pane does not respond at all, the Claude process is gone or wedged: escalate to the user;
-never `worktree remove` (§0.5), and a relaunch needs the pane back at a bare shell first (step 1).
+never `worktree remove` (§0.4), and a relaunch needs the pane back at a bare shell first (step 1).

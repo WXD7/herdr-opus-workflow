@@ -1,16 +1,8 @@
 # Dispatch — §2 to §5b (agent-independent)
 
-Shared by every `dispatch-*` skill in this plugin. Nothing here depends on which coding agent runs
-the lanes: it covers the run's bookkeeping (§2), the lane plan the user confirms (§3), the herdr
-workspaces (§4), and the brief written into each lane's checkout (§5b).
-
-What *is* agent-specific — pre-flighting the pane (§5a) and launching/priming the agent (§5c) —
-lives in the calling skill's `references/driver.md`. §0 (invariants) and §1 (gate and parse) live in
-its `SKILL.md`; §6–§8 live in `references/supervise.md`. Section numbers are continuous across all
-four files, so a cross-reference means the same thing wherever you are.
-
-Throughout, **the agent** means whichever CLI this skill dispatches (codex, grok, opencode…),
-and **the driver** means that skill's `references/driver.md`.
+Shared by the plugin's dispatch skills. The calling `SKILL.md` owns §0–§1, its
+`references/driver.md` owns agent-specific launch and recovery, and `references/supervise.md`
+owns acceptance and delivery. Section numbers are continuous; **the agent** means the caller's CLI.
 
 ---
 
@@ -31,18 +23,12 @@ running different agents over the same repo never share a state tree. `mkdir -p`
 dir for this repo still holds non-terminal lanes, do not silently start a second one — ask the user
 whether to resume, archive, or abort.
 
-Record in the state file, before anything is created: `skill` (this skill's name), `agent_kind` (the
-herdr `--kind` the driver launches), `flags`, `repo`, `base`, and your own coordinates —
-`orchestrator_pane` from `$HERDR_PANE_ID` (always set when the §1 gate passed). Lanes notify
-completion by prompting this pane (§5b), and each brief needs the id verbatim — never leave a lane
-to find its orchestrator with `herdr agent list`. The id stays valid until the pane closes or is
-moved to another workspace (a move re-qualifies it), and it never proves *who* is inside: if this
-session ends, the §7 timer dies with it, later rings error out — or land as unsolicited text in
-whatever session occupies the pane by then — and the run comes back only when a human re-runs this
-skill with `--resume`; that resumed sweep re-arms the loop and re-records `orchestrator_pane` (§7),
-restoring supervision, though briefs already written keep ringing the old pane — the timer covers
-what those rings miss. Within a live session, the §7 timer is the backstop for every ring that
-misses.
+Before creating lanes, record `skill`, the driver's `agent_kind`, `flags`, `repo`, `base`, and
+`orchestrator_pane` from `$HERDR_PANE_ID`. Put that pane id verbatim in each brief's notify-back;
+workers never discover it with `herdr agent list`. A pane id identifies a location, not its occupant.
+If the supervisor session ends or moves, the session-bound timer and old notify-back can fail;
+a human `--resume` restores supervision and records the current pane (§7). Existing briefs can
+still target the old pane, so the timer remains necessary for missed notifications.
 
 **Publishing preflight.** By default a lane finishes with *you* pushing its branch and opening its
 PR (§6f), so settle *now* — before a single workspace exists — whether that will be possible, and
@@ -87,11 +73,14 @@ Then **group** them. This is the most consequential judgement in the skill:
   limits are shared and can throttle every lane at once. The driver names what that limit looks like
   when it is hit.
 
-**Scale the work to the risk.** Planning depth, investigation and lane count follow the task's risk
-and uncertainty, not a fixed template. A small cleanup, a docs change or a well-understood fix
-defaults to one lane, the dependency checks it actually needs, and your one independent verification
-(§6e) — not a repo-wide survey, a coverage inventory, a pre-review of the checklist, or layers of
-independent review. Widen only for a real dependency or a real risk, and say why in the plan.
+**Scale to risk and reuse findings.** A small cleanup, docs change or understood fix defaults to one
+lane, relevant dependency checks and independent acceptance (§6e). Widen investigation or review
+only for a concrete uncertainty or risk. For every lane or native subagent, name its role
+(implementation, research or review), distinct output and remaining question; ceilings are not
+fan-out targets. Pass existing code locations, findings and baseline evidence with commit and
+environment through the brief. Investigate what remains unknown instead of rediscovering the repo;
+independent reviewers still verify risky conclusions. Coordinate expensive shared-environment
+checks to avoid contention, and reuse matching baseline results rather than rerunning for a report.
 
 Per lane derive:
 
@@ -133,16 +122,20 @@ Per lane derive:
   the user is confirming a direction, not discovering one later. Ground every step in the repo — a
   quick Glob/Grep/Read of the code it names, never guesswork. Steps, not prose: the lane executes
   this top to bottom and records any forced deviation in `.dispatch/progress.md` (§5b).
-- `acceptance` — the lane's acceptance criteria (presented to the user as 验收标准), authored by
-  **you**: the explicit, checkable criteria that define done. Build them from the repo's real check
-  commands — found in `package.json` / `Makefile` / `justfile` / CI config, never invented — chosen
-  by what the change actually affects rather than the whole suite by reflex, each with its expected
-  outcome, plus behavioural criteria stated concretely enough to verify from the diff or a command.
-  Choosing narrowly never drops a quality or business-safety requirement the task carries, or a
-  check the user explicitly asked for. A repo with no automated checks gets criteria over tree state and diff content
-  instead, plus an explicit "no automated checks in this repo". These criteria are what the lane
-  works toward, what gates its DONE (§5b), and what §6e later re-runs with its own hands — write
-  nothing here you cannot check yourself.
+- `acceptance` — **your** explicit, checkable definition of done (验收标准). Use actual repo
+  commands and expected outcomes, selected by impact; preserve user-required and business-safety
+  checks. Name the critical criteria you will independently rerun (§6e), and evidence eligible for
+  reuse. No automated checks means tree/diff criteria plus that disclosed limitation. For a
+  user-facing change, cover the intended user path, meaningful output, failure/retry behavior and
+  any agreed interaction quality. An API shortcut proves only that layer, not UI completion;
+  an empty result needs a justified business reason, not just a successful status. Keep concrete
+  product rules in this task's acceptance, not the generic workflow.
+
+When structural simplification is in scope, name the duplication, coupling or responsibility to
+improve and the before/after evidence. Reuse existing abstractions only where their failure
+semantics fit; explain a necessary new entity. Neither line-count reduction nor more shared
+components proves a better design. Record remaining structural debt without widening into a
+whole-repo rewrite.
 
 Present the plan in Chinese: the lane table (lane / 分支 / 包含的任务), and under each lane its
 实施计划 (the ordered steps) and 验收标准 bullets. Below that, state in **three** lines, so the user
@@ -223,31 +216,21 @@ them: the file must exist before the agent is primed.)
 Every lane has its own checkout, so `.dispatch/` never collides between lanes and needs no per-lane
 subdirectory.
 
-The brief contains, in English: **objective**; the **plan** — the §3 plan exactly as the user
-confirmed it, with a standing instruction: execute it in order, and when reality contradicts a
-step, record the deviation and its reason prominently in `.dispatch/progress.md` instead of
-silently re-designing; the **checklist** as `- [ ]` items; the **acceptance criteria** — the §3
-criteria exactly as confirmed, with the framing that they, not the checklist ticks, define done:
-DONE is written only when every criterion verifiably holds; **boundaries** (work only in this
-checkout, never `cd` to the main checkout, never touch another lane's files, never push, never
-merge, never open a pull request — committing is where your job ends, and the orchestrator delivers
-the branch the way the user confirmed once it has verified it); and the **commit policy** below,
-quoted into the brief in full.
+The English brief contains: **objective**, the exact confirmed **plan** and **acceptance**, a
+`- [ ]` **checklist**, reusable **findings/baselines** (source commit, environment, command/result
+and evidence path), and remaining questions. Execute in order; record justified implementation
+deviations in `progress.md`. A change to scope or acceptance goes back to the supervisor before
+proceeding; recording a deviation alone does not authorize weaker delivery. DONE requires every
+criterion, not merely checked boxes. **Boundaries:** work only in this checkout, never `cd` to
+the main checkout or touch another lane's files; commit but never push, merge or open a PR.
+The supervisor verifies and delivers. Include the following commit and progress policies.
 
-> **Commit policy.** Organize commits as complete changes: each commit is one coherent unit that a
-> reviewer can read on its own and a future `git revert` can take out in one piece, and each message
-> follows Conventional Commits: `<type>(<scope>): <description>`. Commit each unit once it is
-> complete, rather than holding a multi-part task for one lump at the end.
->
-> Size follows the change, not the checklist: a small task may be a single commit, there is no
-> minimum number of commits per checklist item, and the count says nothing about the quality of the
-> work. If the user asked for a single commit, that wins — make it once the whole change holds.
-> Otherwise a refactor and the behaviour change that follows it are separate commits, a new module
-> lands separately from the code that starts calling it, and unrelated fixes you notice along the
-> way never ride along inside another commit. Stage only the paths belonging to the unit you are
-> committing — `git add <paths>`, never `git add -A`. Do not amend or rebase a commit you already
-> made, or any history before it; correct it with a follow-up commit instead, because the
-> orchestrator may already have read the history.
+> **Commit policy.** Commit coherent, reviewable and independently revertible changes with
+> Conventional Commits: `<type>(<scope>): <description>`. Separate unrelated fixes and substantive
+> refactors from behavior changes when they are independent units; do not split a small change
+> merely to match checklist items. Honor a user-requested single commit. Stage explicit paths,
+> never `git add -A`; correct committed work with follow-up commits, never amend or rebase history
+> the supervisor may already have read.
 >
 > **`.gitlock` protocol** (from `~/CLAUDE.md`), pinned to the **main checkout's absolute path**
 > `<repo>` — each worktree has its own root, so a per-worktree lock would serialize nothing: before
@@ -258,10 +241,10 @@ quoted into the brief in full.
 Then the load-bearing part:
 
 > **Progress protocol.** Keep `.dispatch/progress.md` current: after each checklist item, rewrite it
-> with the checklist and its tick state, what you just did, what you are about to do, and any decision
-> a fresh reader would need. Assume your context may be compacted at any moment and this file is all
-> you keep. When every checklist item is done, every acceptance criterion holds and `git status` is
-> clean, write `.dispatch/DONE` with a one-line summary.
+> with checklist state, meaningful changes, next action, decisions and check evidence (command,
+> result, commit, relevant environment). Pass the brief's relevant findings and delegation rule
+> (§3) to any native descendants. Keep this file concise enough to restore after compaction.
+> When all items and criteria hold and `git status` is clean, write `.dispatch/DONE` with a summary.
 
 `.dispatch/progress.md` carries more weight the less autonomous the agent is: for a lane driven by
 re-nudges (§6c `idle_incomplete`) it is the only thing that tells the next nudge where to resume, so
