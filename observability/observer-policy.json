@@ -1,0 +1,58 @@
+{
+  "version": 2,
+  "mode": "shadow",
+  "observer": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high",
+    "role": "workflow_observer",
+    "max_packet_chars": 24000,
+    "max_calls_per_run": 2,
+    "cooldown_seconds": 900,
+    "max_wall_seconds_per_review": 180,
+    "budget_note": "Proposed limits, not empirically tuned. This shadow gate never invokes an LLM. A future dispatcher must reserve calls atomically and meter observer usage separately; wall/input limits are not a hard total-token cap.",
+    "invocation_mode": "manual_only",
+    "automatic_invocation_enabled": false,
+    "user_confirmation_required_each_call": true,
+    "max_calls_per_confirmation": 1,
+    "retry_requires_new_confirmation": true,
+    "confirmation_scope_fields": [
+      "run_ids",
+      "session_ids",
+      "evidence_scope",
+      "questions",
+      "deliverable",
+      "read_only",
+      "call_count"
+    ],
+    "approval_cannot_be_derived_from_events": true
+  },
+  "triggers": [
+    "run_completed",
+    "quality_regression",
+    "repeated_failure",
+    "no_progress"
+  ],
+  "minimum_repeated_failures": 2,
+  "minimum_no_progress_seconds": 600,
+  "maximum_observation_age_seconds": 60,
+  "no_progress_requires_explicit_expected_progress": true,
+  "heartbeat_invokes_llm": false,
+  "never_optimize": [
+    "sandbox_permissions",
+    "approval_policy",
+    "acceptance_criteria",
+    "tests",
+    "observer_budget",
+    "telemetry_evidence"
+  ],
+  "promotion": {
+    "mode": "proposal_then_isolated_evaluation",
+    "one_variable_per_candidate": true,
+    "require_fixed_task_and_base_commit": true,
+    "require_held_out_tasks": true,
+    "require_single_agent_baseline": true,
+    "require_no_quality_regression": true,
+    "include_failed_and_cancelled_attempts_in_cost": true,
+    "require_versioned_rollback": true
+  }
+}

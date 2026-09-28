@@ -1,0 +1,14 @@
+{
+  "package": "langwatch",
+  "version": "1.18.0",
+  "license": "MIT",
+  "url": "https://registry.npmjs.org/langwatch/-/langwatch-1.18.0.tgz",
+  "bundle_sha256": "17e772f8d7e047fd9445df466e92bf82e5bee48d0752ace423465ace4407905c",
+  "extracted_sha256": "429bb486b8f00ec90eaa8ef2bebd13fa0a15731f0ee99e2ed0ef555256199d20",
+  "segments": {
+    "esbuild_helpers": "d72fd99617f27cd3caaae6fe7ab1e9811077516e39caed15f47c11e7aa984181",
+    "rollout_parser": "f44baedc97f1333ef2bb5e4e3397f7cbf9141771cc0f41c17e1d74b84733f83c",
+    "otlp_builder": "bdeeb1f39237df01d65f3913d2d34c3fffd971d14bea6f10a7bb064601af5c44"
+  },
+  "adapter_difference": "Only pure parser and OTLP builder are reused. No CLI installation, global config, login, daemon, historical scan, session-context spool or model gateway. Only the notified thread is read; the last three turns are submitted, with project correlation attributes added."
+}

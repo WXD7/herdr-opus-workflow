@@ -1,255 +1,49 @@
-# herdr-dispatch
+# Herdr Opus Workflow
 
-A Claude Code plugin that turns one Claude session into an **orchestrator** for a fleet of coding
-agents.
+WXD7 的私有工作流版本库，保存 **Herdr + 原 herdr-dispatch 插件 + Claude Opus 5.5/max
+执行器 + LangWatch 采集与人工授权复盘**。沿用原规划、任务书、监督、恢复和独立验收体系。
+命令 `/herdr-dispatch:dispatch-codex` 保留兼容名称，当前执行器是 Claude。
 
-You describe the work. Claude splits it into *lanes*, gives each lane its own git worktree and its
-own agent — **codex**, **grok** or **opencode** — running inside a [herdr](https://herdr.dev)
-workspace, then supervises every lane on a timer until its work is verified, its branch is pushed
-and its pull request is open.
+## 保存内容
 
-The division of labour is deliberate:
-
-- **Claude plans.** It reads the repo, writes each lane's implementation plan and acceptance
-  criteria, and asks you to confirm them before anything is created.
-- **The agent executes.** Each lane gets that plan verbatim as a brief and works through it.
-- **Claude publishes.** Lanes are briefed never to push, merge, or open a PR. That one operation
-  which reaches a shared remote stays behind Claude's own verification of the acceptance criteria.
-
----
-
-## Requirements
-
-| What | Why |
+| 路径 | 内容 |
 | --- | --- |
-| [**herdr**](https://herdr.dev) | Creates the worktrees, workspaces and panes each lane lives in. `brew install herdr` — developed against 0.9.0 |
-| **A herdr pane** | The skills refuse to run outside one — there would be nothing to dispatch into |
-| **A git repository** | Every lane is a linked worktree branched off a base ref. Run from the main checkout, not a linked worktree |
-| **At least one agent CLI** | `codex`, `grok`, or `opencode` — whichever dispatcher you invoke, resolvable from the pane's own login shell |
-| **`python3`, `jq`** | Used to probe each lane's on-disk state |
-| **`gh`, authenticated** | Optional. Without it lanes are pushed but the `gh pr create` command is printed for you to run |
-| **`origin` remote** | Optional. Without it lanes stay local and are reported as such |
+| `source/herdr-dispatch/` | 完整原插件、四文档修订、许可证及其既有 Git 历史 |
+| `scripts/` | 原启动入口、pane 环境准备、Claude 状态探针及测试 |
+| `runtime/herdr.toml` | 本机 Herdr 配置快照 |
+| `observability/` | 本地采集、复盘材料生成与人工授权策略；不自动调用模型 |
+| `observability/langwatch/` | Docker Compose、固定镜像摘要、初始化/查询代码及采集适配器 |
+| `demo/` | 合成示例源文件与测试；不含原示例仓库的 `.git` |
+| `AGENTS.md`、`CLAUDE.md` | 原工程入口约定快照 |
+| `SNAPSHOT.json` | 来源提交、四文档与配套文件哈希、排除范围和本机绑定说明 |
 
-Nothing is installed for you. If an agent CLI or `gh` is missing, the run says so up front and
-degrades — it never installs, authenticates, or creates a missing branch on your behalf.
+不包含业务仓库、worktree、运行报告、真实会话、数据库、Docker volumes、登录信息、
+LangWatch 私密目录或下载依赖。测试中的 JSONL 是合成夹具。原说明中指向 `evidence/`
+的历史验证链接保留在本机，未随本仓库上传。
 
-## Installation
+## 版本与使用边界
 
-As a plugin — the recommended path in Claude Code:
+- `main`：完整工程的版本分支；首个整体快照标签为 `bundle-v1.0.0`。
+- `workflow-v1.0.0` / `workflow-v1.1.0`：原插件修改前/后的标签，提交和内容保持不变。
+  这两个历史标签采用插件位于仓库根目录的旧布局，不能当作整个工程快照。
+- 当前四份正文仍是 `workflow-v1.1.0`，本次归档未改变调度规则或执行配置。
+- [版本比较、探索与回退](source/herdr-dispatch/WORKFLOW-VERSIONS.md)。
 
-```
-/plugin marketplace add bestony/herdr-dispatch
-/plugin install herdr-dispatch@herdr-dispatch
-```
+这是**源码与配置备份**，当前运行仍在
+`/Users/wangxian/Documents/ChatGPT/开发/herdr-workflow-fresh-20260926`。
+此次没有迁移、启动或重启业务 Agent、Herdr 或 LangWatch。
 
-If the install summary says `Run /reload-plugins to activate.`, run that.
+`driver.md` 的 `<ROOT>`、`runtime/herdr.toml` 的 worktree 目录仍指向原工程；
+Herdr session、Compose project 和网页端口也保留原值。需要从新路径运行或另建并行环境时，
+先明确部署目录并调整这些绑定，恢复本机依赖与私密配置，再用原入口启动全新会话/run。
+不要直接用本副本的部署命令操作正在运行的同名环境，也不要把旧会话 resume 当作换版。
 
-### Via skills.sh
+原始执行依赖包括本机 Herdr、官方登录的 Claude Code、zsh、Python 3.13、Node.js，
+本地 LangWatch 部署另需 Docker。下载依赖和凭据不通过 Git 分发。
 
-The same three skills are also published to the [skills.sh](https://skills.sh) registry, for installs
-that are not plugin-managed — or for handing them to another agent that reads `SKILL.md`:
+## 来源
 
-```bash
-npx skills add bestony/herdr-dispatch --list          # what is in the repo
-npx skills add bestony/herdr-dispatch                 # install into ./.claude/skills/
-npx skills add bestony/herdr-dispatch -g              # install into ~/.claude/skills/
-npx skills add bestony/herdr-dispatch -s dispatch-codex -a claude-code -y
-```
-
-Each installed skill directory is self-contained, so `/dispatch-<agent>` works from `.claude/skills/`
-with no plugin installed. Prefer the plugin when you are on Claude Code: `npx skills update` replaces
-the skill directories wholesale, and only the plugin carries a version and the marketplace entry.
-
-<details>
-<summary>Local development install</summary>
-
-```bash
-git clone https://github.com/bestony/herdr-dispatch.git
-claude --plugin-dir ./herdr-dispatch
-```
-
-Run `/reload-plugins` to pick up edits without restarting.
-
-</details>
-
-## Quick start
-
-Start Claude Code **inside a herdr pane**, in the main checkout of the repo you want the work done
-in, then:
-
-```
-/dispatch-codex Add an owner filter to the repos list; fix the websocket reconnect timeout
-```
-
-What happens next:
-
-1. Claude fetches `origin`, picks a base ref, and checks whether it will be able to push and open PRs
-   at the end — so you learn about a missing `gh` login *now*, not after ten lanes have run.
-2. It groups your tasks into lanes, and for each lane writes an implementation plan grounded in the
-   actual code plus acceptance criteria built from the repo's real check commands.
-3. It shows you the lane table plus each lane's plan and acceptance criteria, and asks once whether
-   to dispatch. **Nothing is created before you answer.**
-4. On confirmation: one worktree + workspace + agent per lane, each primed with its own brief.
-5. A supervision loop runs every 5 minutes. It probes each lane from disk, nudges the stopped ones,
-   compacts the hot ones, resolves parked dialogs, and re-runs the acceptance criteria itself on any
-   lane claiming to be done.
-6. Each lane that passes gets pushed on its own branch and opened as a pull request.
-
-The plan, the questions and the final report are in Chinese; the briefs, commits and PR bodies are
-in English.
-
-## The three dispatchers
-
-Same procedure, same flags, different agent underneath. Pick by which CLI you have and how
-autonomous you want the lanes to be.
-
-| Skill | Agent | How a lane is driven |
-| --- | --- | --- |
-| `/dispatch-codex` | codex | **Goal mode** (`/goal`). Codex auto-continues toward the objective across turns; the supervision loop is a repair path |
-| `/dispatch-grok` | grok (Grok Build) | **Goal mode** when `[goal] enabled = true` in `~/.grok/config.toml`, otherwise one-shot + nudges. The dispatcher reads your config and tells you which regime is in force |
-| `/dispatch-opencode` | opencode | **Nudge-driven.** Opencode has no goal mode — it stops after every turn, so the loop's continuation prompt *is* the engine. Expect roughly one turn per sweep interval |
-
-Plugin-qualified forms work too: `/herdr-dispatch:dispatch-codex`.
-
-## Flags
-
-```
-/dispatch-<agent> <task-1>; <task-2>; … [flags]
-```
-
-Everything that is not a flag is task text. Tasks split on numbered items, newlines, or `;`.
-
-| Flag | Meaning | Default |
-| --- | --- | --- |
-| `--lanes N` | Cap on concurrent lanes, 1–16 | `16` |
-| `--base <ref>` | Base ref for lane branches | `origin/<current>` if it exists, else the current branch |
-| `--no-yolo` | Run lanes under normal approval prompting instead of bypassing it | off — **yolo is the default** |
-| `--yolo` | Accepted, but redundant — already the default | on |
-| `--draft` | Open pull requests as drafts | off — **ready for review** |
-| `--no-pr` | Push each verified lane, then print the `gh pr create` command instead of running it | off |
-| `--resume` | Skip planning; run **one** supervision sweep over an existing run | off |
-| `--no-loop` | Do not arm the recurring supervision loop after dispatch | off |
-| `--compact-at N` | *(opencode only)* Send `/compact` once a lane's last turn reports ≥ N context tokens | unset — no automatic compaction |
-
-`--compact-at` takes absolute tokens rather than a percentage because opencode publishes no context
-window on disk, and the dispatcher refuses to invent a denominator. The codex and grok dispatchers
-compact on a percentage they can actually read.
-
-### Two things that are not flags
-
-**Worktree isolation has no opt-out.** With approvals bypassed by default, the worktree boundary is
-the only thing keeping one lane's mistakes out of the other lanes and out of your own checkout.
-Passing `--no-worktree` stops the run before anything is created.
-
-**Yolo is the default, and it is a real trade.** An approval overlay stalls an unattended lane until
-the next sweep notices it, so lanes launch with approvals bypassed:
-
-| Agent | Launch flag | What it gives up |
-| --- | --- | --- |
-| codex | `--dangerously-bypass-approvals-and-sandbox` | Approvals **and** the sandbox |
-| grok | `--permission-mode bypassPermissions` | Approvals only — your `--sandbox` profile is left untouched, so if you have it set to `off`, the worktree is the only boundary |
-| opencode | `--auto` | Approvals only, and opencode's own help calls it dangerous. There is no sandbox either way |
-
-Pass `--no-yolo` to keep prompting; the loop then resolves each overlay itself, at the cost of a lane
-pausing between sweeps. Under `--no-yolo` the flag is passed through *explicitly* rather than merely
-omitted, because a global `yolo = true` in the agent's own config would otherwise leave the lane
-auto-approving while the plan summary claimed the opposite.
-
-## Resuming and stopping
-
-The supervision loop lives in your Claude session. If the session ends, the timer dies with it —
-lanes keep working, but nobody is watching. Bring supervision back with:
-
-```
-/dispatch-codex --resume
-```
-
-A `--resume` sweep finds the run by scanning state files for one matching your cwd, runs one full
-sweep, re-arms the timer, and re-records the pane to notify. Conversation memory is never trusted:
-**the state file is the only truth**, and every sweep starts by re-reading it.
-
-The loop stops on its own once every lane is terminal — published, failed, paused by you, or
-verified-but-unpublishable with a recorded reason — and tells you which lanes are waiting on what.
-
-## What a run leaves on disk
-
-```
-~/.claude/dispatch-<agent>/
-├── bin/lane_state.py       # the on-disk probe helper — written once, shared by every run
-└── <run-id>/
-    ├── state.json          # the run's only source of truth, rewritten atomically each sweep
-    └── <lane>-pr.md        # PR body, written to a file so multi-line quoting can't break
-
-<lane-checkout>/.dispatch/    # git-excluded via .git/info/exclude
-├── TASK.md             # objective, confirmed plan, checklist, acceptance criteria, boundaries
-├── progress.md         # rewritten by the lane after every checklist item
-└── DONE                # written only when the lane believes every criterion holds
-```
-
-`.dispatch/progress.md` is the lane's memory across compaction, and it is what the next continuation
-prompt is built from. `DONE` is a claim, not a verdict — Claude re-runs the acceptance criteria
-itself before believing it.
-
-## What it will not do
-
-These are invariants, not defaults:
-
-- **Never force-push**, never push the base branch, never push a branch absent from the state file.
-- **Never merge**, never `worktree remove`, never delete a session or a worktree. Those commands are
-  *printed* at the end for you to run.
-- **Never touch what it did not create.** Lane names carry no run id and are reusable, so identity is
-  re-confirmed from the recorded session id before any lane is steered.
-- **Never approve a lane's request to push or open a PR.** A lane asking for that misread its brief;
-  it gets surfaced to you, not approved.
-- **Never report a half-finished lane as complete.** A lane is done when its tree is clean, its
-  commits are real, and every acceptance criterion has been re-verified by the orchestrator.
-
-## Cleanup after a run
-
-The final report prints these — it does not run them. Order matters: `worktree remove` comes first,
-because git refuses to delete a local branch still checked out in a worktree.
-
-```bash
-herdr worktree remove --workspace <ws>            # destroys the checkout AND kills its agent
-gh pr merge <pr-number> --squash --delete-branch  # per lane, after you have reviewed it
-git -C <repo> branch -d <branch>                  # only if the branch outlived the merge
-```
-
-`herdr worktree create` produces **two** workspaces per lane — the linked worktree and one for the
-base repo — so expect two ids to clean up. And `worktree remove` discards uncommitted work in that
-checkout even without `--force`.
-
-## Repository layout
-
-```
-.claude-plugin/
-├── plugin.json               # plugin manifest
-└── marketplace.json          # lets this repo host itself as a marketplace
-skills/
-├── _shared/
-│   ├── plan.md               # §2–§4, §5b — bookkeeping, lane plan, workspaces, brief
-│   └── supervise.md          # §6b, §6e–§6f, §6i, §7, §8 — poll, verify, publish, loop, report
-├── dispatch-codex/
-│   ├── SKILL.md              # §0 invariants, §1 gate and parse
-│   └── references/
-│       ├── driver.md         # §5a, §5c, §6a, §6c, §6d, §6g, §6h — everything codex-specific
-│       ├── plan.md           # symlink → ../../_shared/plan.md
-│       └── supervise.md      # symlink → ../../_shared/supervise.md
-├── dispatch-grok/            # same shape
-└── dispatch-opencode/        # same shape
-```
-
-Each dispatcher is four files with **continuous section numbers §0–§8**, so a cross-reference means
-the same thing wherever you are. Adding a fourth agent means writing one `SKILL.md` and one
-`driver.md`, plus the two `references/` symlinks; `_shared/` itself is reused untouched.
-
-The symlinks exist because the skills.sh installer copies a skill directory **on its own** — its
-`--copy` mode and its canonical staging both dereference symlinks, so `../_shared/` would otherwise
-arrive as a dangling path and every §2–§4 and §6b–§8 reference in the installed skill would point at
-nothing. They keep the shared halves single-sourced in the repo while resolving after install.
-`ponytail:` this depends on the installer dereferencing symlinks rather than preserving them; if a
-future CLI version changes that, the fix is to copy the two files into each `references/`.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+插件来自 [bestony/herdr-dispatch](https://github.com/bestony/herdr-dispatch)，原 MIT
+许可证保留在 `source/herdr-dispatch/LICENSE`。LangWatch 纯函数来源和哈希见
+`observability/langwatch/instrumentation/upstream-source.json`，对应许可证已保留。
+上游提交、原适配提交和本次副本核对依据见 `SNAPSHOT.json`。

@@ -1,0 +1,16 @@
+onboarding = false
+
+[terminal]
+default_shell = "/bin/zsh"
+shell_mode = "login"
+new_cwd = "follow"
+
+[worktrees]
+directory = "/Users/wangxian/Documents/ChatGPT/开发/herdr-workflow-fresh-20260926/worktrees"
+
+[server]
+headless_cols = 140
+headless_rows = 45
+
+[ui.sound]
+enabled = false

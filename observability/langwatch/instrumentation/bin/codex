@@ -1,0 +1,2 @@
+#!/bin/sh
+exec python3.13 "$(dirname "$0")/../launch.py" codex "$@"
