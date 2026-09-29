@@ -1,3 +1,8 @@
+> **本目录为衍生版本。** 以下保留 Bestony 原版 README，含原执行器和 YOLO 选项；
+> 本仓库使用 Opus 5.5 / max 且保留审批，实际入口、版本与限制以
+> [项目说明](../../README.md)及当前 dispatch-codex 四文档为准。
+> Grok / OpenCode 文件为上游保留内容，不在本版支持与验证范围。
+
 # herdr-dispatch
 
 A Claude Code plugin that turns one Claude session into an **orchestrator** for a fleet of coding

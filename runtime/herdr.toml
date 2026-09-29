@@ -6,7 +6,7 @@ shell_mode = "login"
 new_cwd = "follow"
 
 [worktrees]
-directory = "/Users/wangxian/Documents/ChatGPT/开发/herdr-workflow-fresh-20260926/worktrees"
+directory = "/absolute/path/to/herdr-opus-workflow/worktrees"
 
 [server]
 headless_cols = 140

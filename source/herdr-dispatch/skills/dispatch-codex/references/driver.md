@@ -6,12 +6,12 @@ compatibility only (`../SKILL.md`); every lane here is **Claude Code**, launched
 `references/plan.md` (§2–§4, §5b) and `references/supervise.md` (§6b, §6e, §6f, §6i, §7, §8);
 §0 and §1 are in `../SKILL.md`.
 
-`<ROOT>` below is the workflow project that owns the lane environment and the probe helper:
-`/Users/wangxian/Documents/ChatGPT/开发/herdr-workflow-fresh-20260926`.
+`<ROOT>` is the absolute bundle root containing `scripts/` and `observability/`, resolved from
+the loaded `source/herdr-dispatch` plugin. Record it; never substitute an old runtime or cache.
 
 **(verified)** covers local Claude Code **2.1.280** launch flags and the transcript fields used
 below; **(herdr, verified)** covers agent-independent Herdr behavior. The adapted launch and
-ordinary supervision also ran in `tm173y` (evidence under `<ROOT>/evidence/ponora-inbound-20260927/`).
+ordinary supervision ran locally before this release; private run evidence is not distributed.
 **(unverified)** marks recovery/UI behavior not established by that run: inspect its actual result.
 Record the installed CLI version; a mismatch is a report line, not an abort. No Codex rollout or
 goals database applies, and this driver does not enable native `/goal`.
@@ -217,7 +217,7 @@ It reports the probe contract's fields:
   writes one for every compaction, manual or automatic, is unverified, and when the tail does not
   reach the start of the file the helper sets `compactions_partial` — the count is then a floor. §6h
   trusts it only as far as it says there.
-- `mtime` — the transcript file's modification time, for stall detection.
+- `mtime` — transcript write time, an activity hint; metadata writes are not substantive progress.
 - `probe` — `ok` / `unavailable`, with `reason`. It is the driver status field §6i prints (plus
   `last_event` when `turn_state` is `unknown`).
 - `out_of_room` — true when the newest main-thread message is an API error saying the prompt is too
@@ -241,6 +241,9 @@ unverified and escalate without prompting, approving or compacting that lane.
 
 ## §6c Classify each lane, in this order
 
+Record `last_substantive_progress_at` for evidenced code, check or blocker changes (§6d).
+Missing history is unknown: establish a baseline, not an invented stall. Metadata alone never resets it.
+
 | Class | Test | Action |
 | --- | --- | --- |
 | `terminal` | phase is `published`, `failed`, user-paused, or `verified` with a recorded §6f degrade reason | Skip — report only; never re-verify, re-publish, or prompt a closed lane |
@@ -249,7 +252,8 @@ unverified and escalate without prompting, approving or compacting that lane.
 | `blocked` | `agent_status == blocked` | Read `--source visible`, handle (§6g) |
 | `blind` | `probe == unavailable` for two consecutive sweeps | The transcript is not answering for this lane — missing, or it failed the `sessionId` / `cwd` check. Read `--source visible` once, judge from git state, and escalate rather than steering a lane you cannot see |
 | `hard_fail` | `out_of_room` (§6a), and no §6h recovery recorded in flight | No verified in-place restart exists here: one `/compact` per §6h if its gate allows; otherwise — or if it changes nothing — escalate |
-| `stalled` | `state_change_seq` **and** `mtime` both unchanged ≥ 15 min | Read `--source visible` once: a dialog → §6g; an idle input box over unfinished work → the `idle_incomplete` action; a tool call or sub-agent still visibly running → leave it: a long build, test run or sub-agent is normal work. The same call showing for 60 min is only a point to diagnose and ask the user once in the sweep report — never a timeout: nothing stops, interrupts or fails the call on that clock, and a call still making real progress is not judged by its duration; otherwise escalate; never score as finished |
+| `api_error` | newest main-thread event is `assistant:api_error`, except `out_of_room` above | Inspect once now (§6g); do not wait for an mtime stall. Record the error identity, active work and side effects before a bounded recovery |
+| `stalled` | no evidenced substantive progress ≥ 15 min; metadata activity alone does not reset this | Read visible state once. Dialog → §6g; idle unfinished turn → §6d; active tool/subagent → leave working. Long work alone is not failure. At 60 min diagnose once within §3's budget; continuing progress requires no intervention. Unresolved cases use §3's decision owner, never an automatic timeout |
 | `hot` | `used_pct ≥ 70` **and** `turn_state == complete` | Inert: `used_pct` is always `null` (§6a), so this row never matches — context is left to Claude Code, and the sweep never compacts on a guess |
 | `idle_incomplete` | `agent_status` is `done`/`idle`, `turn_state == complete`, **and** no `DONE` file | Read `progress.md`, send a specific continuation (§6d), record the nudge — unless pending background/subagent work can resume it; then send nothing |
 | `working` | otherwise | No continuation; only a necessary queued update under §6d may be sent |
@@ -264,7 +268,8 @@ idle turns need frequent continuation; return to `15m` once normal progress resu
 cadence affects the next tick, not an unseen event between ticks. Task-specific urgency may justify
 a different interval, recorded with its reason. Notifications still trigger earlier checks.
 Do not presume unfinished lanes are idle; check for pending tools/subagents before nudging.
-User-paused or unanswered `escalated` lanes receive no steering from any row.
+User-paused or unanswered `escalated` lanes receive no steering from any row. Resolve a routine
+exception under §3 before resuming; an authorization/platform denial is never overridden.
 
 One known race, by design: a notify-back can arrive before the ringing lane's final turn closes (the
 brief fires it right after DONE is written, mid-turn), so that lane may still read `working` with
@@ -281,8 +286,8 @@ or send `/goal`/Codex commands. Ordinary continuations require an idle turn with
 **Necessary updates may queue during work.** For a user-authorized scope change or concrete
 correctness evidence, persist the change in the existing brief/state and send one concise update
 without interrupting the turn, only when the
-current client is known to support queued prompts and the visible input is empty. The `tm173y`
-review records a successful queued update; other clients need their own evidence. If support is
+current client is known to support queued prompts and the visible input is empty. A prior local
+run established this for its client; other clients need their own evidence. If support is
 unknown, retain the update in state for the next safe idle point and report the delay. Before
 sending record update id, content and attempt; afterward record queued/failed/uncertain, and mark
 absorbed only from transcript/progress evidence. Do not equate delivery with uptake or retry an
@@ -321,16 +326,17 @@ working, and its counter does not move. Then:
   `no_progress == 1`, nudge once more, differently:
   quote the exact blocker if the pane shows one, or narrow the ask to a single file. At
   `no_progress == 2`, **stop nudging**: record `escalated` with the last two prompts and what
-  `progress.md` last said, and report the lane as awaiting-user. Never fire a third identical nudge.
-  From then on the lane gets no continuation and no `/compact` from any row until the user answers.
+  `progress.md` last said, and route to §3's decision owner. Never fire a third identical nudge.
+  No continuation or `/compact` until a recorded resolution changes the blocked condition.
 
 Use this accounting for stalled progress under shared limits too; never claim a machine-readable
 rate-limit state the probe cannot see.
 
 **When the lane reports a real blocker** — a missing secret, a broken upstream, a contradiction in
 the task — do not improvise scope. If the answer is inside the §3-confirmed plan (a decision the
-brief already made, a misread step), send the correction as a normal prompt. Otherwise escalate with
-the blocker quoted (record `escalated`).
+brief already made, a misread step), send the correction as a normal prompt. Otherwise record the
+quoted blocker, evidence and decision owner (§3); supervisors decide routine recovery, delegated
+reviewers only their authorized exceptions, and users any changed scope, authority or budget.
 
 **Pausing a lane** is a user decision, not a sweep's: record
 `pause: {origin: user, at: <sweep time>}` in the state file and stop nudging it. A turn already in
@@ -341,37 +347,29 @@ says otherwise.
 
 ## §6g Handle a blocked lane
 
-This driver never bypasses approvals (§5c), so `blocked` is an expected state here, not an anomaly:
-Claude Code raises a permission prompt for a call its `auto` mode does not clear by itself, and the
-lane waits until a sweep answers. It can also be the startup trust dialog (§5c) or a herdr
-misclassification — read the pane before assuming which:
+Prove identity (§6b), then read the visible pane once. Distinguish permission, task decision,
+startup dialog and runtime error. Preserve real drafts; grey suggestions alone prove nothing.
+Do not guess keys or send a prompt into a dialog (`agent_blocked`); use its displayed option.
 
-    herdr agent read <lane> --source visible
+Benign work inside the checkout may receive one-time approval, not a persistent rule. Notify-back
+must exactly target the recorded supervisor pane with this run/lane and no chained operation.
+Worker publishing, force operations, sudo, credentials and outside-scope actions stay blocked;
+route them under §3. Supervisor publishing remains after independent acceptance. A platform denial
+or unavailable approval verdict cannot be retried through another tool, path or permission mode.
 
-Claude Code's permission prompts — wording, options, keys — are **(unverified)** under herdr in this
-driver, so answer only with `send-keys` matching the option actually displayed. Never type a
-remembered key, and never send a prompt at a parked list — it presses the highlighted default.
+Routine decisions follow confirmed defaults; authorized reviewers handle only delegated exceptions.
+New scope, reduced acceptance or excess budget needs the user. Use the intended business cwd and
+exact evidence directories, not broad HOME access. v1.2 includes no automatic approval/wake bridge;
+use the existing interface only within its authorization. A future channel
+must bind run/session, workflow and exact request, reject changed/expired answers and consume once.
+Children inherit no supervisor approval. Timeout/error preserves native approval; a late answer
+file is not proof of consumption. Notification, model wake and consumption are separate. Never
+infer a live wait from LangWatch blocked_on_user or add another model-polling system.
 
-- Benign and inside the lane's own checkout (edit its files, run its tests, read files) → approve the
-  narrowest option offered, a one-time yes. Never an "always" / "don't ask again" option: it writes a
-  permission rule that outlives this call — the opposite of the approvals the user asked to keep.
-- The one sanctioned exception to the bullet below: a finishing lane's notify-back (§5b) may surface
-  *here*, as a permission prompt for a `herdr agent prompt` command. If the quoted command is
-  **exactly** the notify-back — aimed at the recorded `orchestrator_pane`, carrying this run's id and
-  the lane's own name, with nothing chained after it — approve it once: you briefed it, and the sweep
-  reading this prompt is already the sweep it was trying to summon. Any variation — another pane,
-  another run id, an extra `;`/`&&` command — is not the notify-back and falls through to the rule
-  below. When it does surface here, the doorbell rings late by design: the prompt holds the ring
-  until a timer sweep approves it — a cost of keeping approvals, not a malfunction.
-- Anything leaving the lane's blast radius — `git push`, `gh pr create`, force operations, `sudo`,
-  deleting outside the checkout, reading credentials, writing to a network target → **do not answer**.
-  Leave the prompt standing, record it (`escalated`, command quoted), stop steering the lane, and
-  surface it to the user. Publishing being a normal part of this run (§6f) does not make it
-  approvable *here*: §6f runs after verification, on your side of the fence. A lane asking to push is
-  a lane that misread its brief.
+Explicit API errors deserve prompt diagnosis after proving no operation is still running; verify
+side effects before one justified continuation. Do not replay blindly or treat normal long work
+as stalled. Mtime/away_summary changes are not progress. Duplicate events reuse recorded handling.
 
-`herdr agent prompt` returns `agent_blocked` while a dialog is up, so clear it with `send-keys` first
-(herdr, verified).
 
 ---
 

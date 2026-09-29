@@ -7,15 +7,19 @@ if [[ "${HERDR_ENV:-}" != 1 || -z "${HERDR_PANE_ID:-}" ]]; then
 fi
 cd "$TASK_ROOT/demo"
 python3 - "$TASK_ROOT" <<'PY'
-import json, os, pathlib, sys, datetime, subprocess
+import json, os, pathlib, sys, datetime, subprocess, shutil
 root = pathlib.Path(sys.argv[1])
 fields = ('HERDR_ENV', 'HERDR_PANE_ID', 'HERDR_WORKSPACE_ID', 'HERDR_TAB_ID', 'HERDR_SESSION', 'HERDR_CONFIG_PATH')
 data = {key: os.environ.get(key) for key in fields}
 data['cwd'] = os.getcwd()
 data['at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
 for name in ('herdr', 'claude', 'codex'):
+    if name == 'codex' and not shutil.which(name):
+        data[name + '_version'] = None  # legacy collector only; Opus dispatch does not need it
+        continue
     p = subprocess.run([name, '--version'], capture_output=True, text=True)
     data[name + '_version'] = p.stdout.strip()
+(root / 'evidence').mkdir(exist_ok=True)
 (root / 'evidence' / 'orchestrator-environment.json').write_text(json.dumps(data, indent=2) + '\n')
 print(json.dumps(data, indent=2))
 PY

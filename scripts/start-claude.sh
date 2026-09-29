@@ -77,11 +77,21 @@ cmd=("$CLAUDE_WRAPPER" --plugin-dir "$PLUGIN_DIR" --model "$MODEL" --effort "$EF
 
 if (( check )); then
   exec python3 - "$TASK_ROOT" "${cmd[@]}" "$@" <<'PY'
-import json, os, sys
+import hashlib, json, os, sys
 root, command = sys.argv[1], sys.argv[2:]
 plugin_dir = command[command.index('--plugin-dir') + 1]
 with open(os.path.join(plugin_dir, '.claude-plugin', 'plugin.json')) as fh:
     manifest = json.load(fh)
+rule_paths = ('skills/dispatch-codex/SKILL.md', 'skills/_shared/plan.md',
+              'skills/_shared/supervise.md', 'skills/dispatch-codex/references/driver.md')
+rule_hashes = {}
+for relative in rule_paths:
+    with open(os.path.join(plugin_dir, relative), 'rb') as fh:
+        rule_hashes[relative] = hashlib.sha256(fh.read()).hexdigest()
+snapshot_path = os.path.join(root, 'SNAPSHOT.json')
+with open(snapshot_path) as fh:
+    snapshot = json.load(fh)
+rules_match = rule_hashes == snapshot.get('workflow_sha256')
 env = {k: os.environ[k] for k in (
     'CLAUDE_CODE_SUBAGENT_MODEL', 'CLAUDE_CODE_SUBAGENT_MODEL_FORCE', 'CLAUDE_CODE_EFFORT_LEVEL',
     'CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH', 'CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS')}
@@ -92,6 +102,8 @@ print(json.dumps({
     'orchestrator_session': os.environ['HERDR_DISPATCH_SUPERVISOR_SESSION'],
     'profile': {'model': 'claude-opus-5-5', 'effort': 'max', 'permission_mode': 'auto', 'ultracode': False},
     'plugin': {'dir': plugin_dir, 'name': manifest.get('name'), 'version': manifest.get('version')},
+    'workflow': {'version': snapshot.get('workflow_version') if rules_match else 'modified',
+                 'snapshot_match': rules_match, 'sha256': rule_hashes},
     'langwatch': {'wrapper': command[0], 'run_id': os.environ['HERDR_LANGWATCH_RUN_ID'],
                   'role': os.environ['HERDR_LANGWATCH_ROLE']},
     'subagent_env': env,

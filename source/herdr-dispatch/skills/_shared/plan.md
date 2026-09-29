@@ -13,7 +13,7 @@ worktree from, so stop and tell the user in Chinese that dispatch needs a git re
 to sharing the cwd. If `git rev-parse --git-dir` and `--git-common-dir` differ you are in a linked
 worktree; stop and ask the user to re-run from the main checkout.
 
-Per `~/CLAUDE.md`, run `git -C <repo> fetch origin` first and prefer `origin/<branch>` as the base, so
+Run `git -C <repo> fetch origin` first when a remote exists, and prefer `origin/<branch>` as the base, so
 lanes fan out from fresh upstream rather than a stale local branch. With no remote, use the local
 branch and say so in the plan.
 
@@ -73,14 +73,15 @@ Then **group** them. This is the most consequential judgement in the skill:
   limits are shared and can throttle every lane at once. The driver names what that limit looks like
   when it is hit.
 
-**Scale to risk and reuse findings.** A small cleanup, docs change or understood fix defaults to one
-lane, relevant dependency checks and independent acceptance (§6e). Widen investigation or review
-only for a concrete uncertainty or risk. For every lane or native subagent, name its role
-(implementation, research or review), distinct output and remaining question; ceilings are not
-fan-out targets. Pass existing code locations, findings and baseline evidence with commit and
-environment through the brief. Investigate what remains unknown instead of rediscovering the repo;
-independent reviewers still verify risky conclusions. Coordinate expensive shared-environment
-checks to avoid contention, and reuse matching baseline results rather than rerunning for a report.
+**Scale to risk and reuse evidence.** Small work defaults to one lane and independent acceptance.
+Each lane/subagent needs a distinct output and question. Pass known findings with revision and
+environment; verify risky conclusions and reuse matching baselines. Record business cwd, exact
+evidence directories, delivery defaults, diagnostic budget and authorized reviewer scope. Decide
+routine implementation/recovery yourself; route only unresolved exceptions. New scope, lowered
+acceptance or excess budget needs the user. Children inherit limits and report through parents.
+Map original requirements without narrowing them. Record each exception's owner and actual return
+channel; absent reply/channel is not approval. A reviewer is called only with explicit scope and
+budget authorization; never self-invoke Astra. Reuse decisions only while their conditions hold.
 
 Per lane derive:
 
@@ -232,7 +233,7 @@ The supervisor verifies and delivers. Include the following commit and progress 
 > never `git add -A`; correct committed work with follow-up commits, never amend or rebase history
 > the supervisor may already have read.
 >
-> **`.gitlock` protocol** (from `~/CLAUDE.md`), pinned to the **main checkout's absolute path**
+> **`.gitlock` protocol**, pinned to the **main checkout's absolute path**
 > `<repo>` — each worktree has its own root, so a per-worktree lock would serialize nothing: before
 > each commit, create `<repo>/.gitlock`; commit; delete it. If it already exists, another lane is
 > committing — wait 30 s, re-check, and only commit once it is gone. Never delete a `.gitlock` you did

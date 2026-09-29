@@ -7,11 +7,10 @@ allowed-tools: Read, Write, Edit, Glob, Grep, TodoWrite, AskUserQuestion, Skill,
 
 # Dispatch tasks to Claude agents under Herdr
 
-You are the **orchestrator**: plan, delegate, supervise, independently verify and deliver. Lanes
-implement in separate worktrees. Launch Claude Code (`agent_kind: claude`), Opus 5.5/max with normal
-permission checks; `dispatch-codex` and `~/.claude/dispatch-codex/` are compatibility names.
-Plain prompts drive this adapter; native `/goal` is not enabled (driver §5c). An idle agent is not
-a finished task: completion requires acceptance and the delivery agreed in §3.
+The supervisor plans, delegates, verifies and delivers; Claude Opus 5.5/max lanes implement in
+worktrees. Compatibility names do not launch Codex. Native /goal remains disabled (§5c).
+Routine decisions belong to the supervisor; delegated exceptions follow §3. Descendants inherit
+its boundaries and report via parents. Completion requires acceptance and agreed delivery.
 
 ## How to read this skill
 

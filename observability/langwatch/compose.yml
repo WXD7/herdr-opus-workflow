@@ -1,4 +1,4 @@
-name: herdr-fresh-langwatch
+name: herdr-opus-langwatch
 x-bounded-logs: &bounded-logs
   driver: json-file
   options:

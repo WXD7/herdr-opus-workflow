@@ -85,21 +85,15 @@ driver's explicit non-interrupting update rule; never infer support from an empt
     git -C <checkout> status --porcelain              # must be empty
     git -C <checkout> log --oneline <base>..<branch>  # must be non-empty
 
-**Independently judge every criterion.** Read the actual diff
-(`git -C <checkout> diff <base>...<branch>`) and `progress.md`, including checklist and deviations.
-Personally rerun the §3 critical criteria: the core user path, changed high-risk boundaries and
-any check explicitly requiring supervisor execution. Other checks may use inspected evidence from
-workers or reviewers only when command, result, exact HEAD, clean tree, criteria and relevant
-environment/dependencies match; missing provenance or a bare claim of success requires a rerun.
-Baseline findings explain existing defects, but do not establish a pass on changed code. Reuse
-existing baselines; rerun them only to resolve a real new-versus-existing failure question.
-
-For user-facing work, verify meaningful output and the promised interaction path. API-only
-evidence cannot stand in for agreed UI acceptance. Check failure/retry outcomes across affected
-surfaces. Judge scoped structural improvements by the §3 before/after evidence, not line counts.
-An implementation deviation may be justified; lowering scope, quality or acceptance requires user
-agreement. Disclose deviations, substitutes and gaps in §8 and any PR. Failed or missing required
-acceptance keeps the lane open; give one focused correction through the driver.
+**Judge original requirements as well as lane criteria.** Read diff, progress and deviations.
+Rerun the core user path, changed high-risk boundaries and checks assigned to the supervisor.
+Other evidence needs verified command, outcome, exact HEAD, clean tree, criteria and relevant
+environment/dependencies. Reuse matching baselines; they do not prove changed code passes.
+Verify meaningful UI output, failure/retry and agreed interaction quality; API success cannot
+replace UI acceptance. Evaluate structure by scoped before/after evidence, not line counts.
+Separate facts, inference and unresolved causes. Budget exhaustion ends investigation, not an
+acceptance obligation. Only the user may lower scope, quality or acceptance. Disclose gaps;
+failed/missing acceptance leaves the lane open for one focused correction.
 
 **Record evidence once.** For each criterion store outcome, command/evidence, source (your rerun or
 reviewed evidence), `checked_sha` and relevant environment. Distinguish **passed / failed this run /
@@ -134,7 +128,7 @@ Publishing is **idempotent**. It runs on every sweep until it succeeds, so recor
 - the user confirmed local-only delivery (§3 `delivery`) → push nothing and open no PR. If that
   delivery names a local step for you to run, run exactly that step — locally, never rewriting
   history. If it does not complete cleanly, leave it undone and record `escalated` with the error
-  and the exact command: the lane is awaiting-user, and its delivery is not complete. A step the
+  and the exact command; route recovery to §3's decision owner, leaving delivery incomplete. A step the
   user keeps for themselves is reported as agreed and printed in §8. Once the confirmed delivery is
   complete, leave the lane `verified` and record `local-only delivery (confirmed)` in the field a
   degrade reason uses: nothing degraded, but that recorded reason is what makes the lane terminal
@@ -202,9 +196,10 @@ phase, the driver's own status field, `used_pct`, compactions, turn state, PR nu
 raw JSON. This sweep runs many times; verbose output is what makes a long supervision run
 unaffordable.
 
-Escalation-type outcomes are recorded in the state file the first time (`escalated`, with reason).
-Later sweeps re-surface them as one report line each, never as a fresh escalation, and §7 counts
-such lanes as awaiting-user.
+Record exceptions once (`escalated`, reason, decision owner, evidence, requested action and status).
+Routine decisions belong to the supervisor (§3), not an automatic human queue. A delegated reviewer
+must have a real authorized return channel; otherwise report the unavailable route. Reuse the
+record until new evidence arrives; never treat notification as an answer or repeat identical asks.
 
 ---
 
@@ -227,10 +222,11 @@ resumed supervisor, record its current pane and re-arm only if no loop exists an
 remain. `--no-loop` keeps notify-back but a missed ring or silently idle worker then requires a
 manual `--resume`. Add no second model-driven heartbeat. Do not busy-wait inside a sweep.
 
-Stop the loop once every lane is terminal or awaiting-user, and say which lanes wait on what.
+Stop the loop once every lane is terminal or externally waiting with no action left for you;
+record who must decide and why. Resolve routine supervisor decisions before declaring that wait.
 Terminal means `published`, `failed`, user-paused, or `verified` with a recorded reason why §6f
-did not publish it — a confirmed local-only delivery included; awaiting-user means a recorded
-`escalated` the user has not yet answered — a lane whose work is done but whose branch is still
+did not publish it — a confirmed local-only delivery included. External waiting needs a recorded
+unanswered escalation to its authorized owner. A lane whose work is done but whose branch is still
 unpushed is **not** terminal unless its confirmed delivery is local-only, and the loop is what
 eventually gets it out.
 

@@ -1,49 +1,112 @@
 # Herdr Opus Workflow
 
-WXD7 的私有工作流版本库，保存 **Herdr + 原 herdr-dispatch 插件 + Claude Opus 5.5/max
-执行器 + LangWatch 采集与人工授权复盘**。沿用原规划、任务书、监督、恢复和独立验收体系。
-命令 `/herdr-dispatch:dispatch-codex` 保留兼容名称，当前执行器是 Claude。
+**从白宦成（Bestony）的原生方法出发，让多 Agent 工作流随运行证据演进。**
 
-## 保存内容
+本项目衍生自白宦成的 [herdr-dispatch](https://github.com/bestony/herdr-dispatch)
+与其[视频介绍](https://www.youtube.com/watch?v=CSbQEIB2roQ)。
+原方法中 **Claude 规划与调度、Codex 执行、Herdr 隔离工作区、主管独立验收**
+的工程骨架，以及已经写好的规划、执行和验收细节，是本项目的起点与主要继承价值。
+原作者另提供 Grok / OpenCode 驱动；本项目重点改造原 `dispatch-codex` 路径。
+这不是重新发明一套启动器或提示词体系，而是 WXD7 在原生方法上的适配与改进。
 
-| 路径 | 内容 |
+原方法面向它发布时的模型与配置。实际运行后，我们发现还有可以调整的空间：
+小任务也可能重复调查与验收、完成通知与审批可能造成等待、主管可能把本可自行决定的
+恢复步骤上交给人，以及运行证据不足以支持“效率更高”的判断。
+随着模型和 harness 能力更新，执行配置也值得重新验证；这些观察并不说明原方法无效。
+
+本地使用配置更新为 **Claude Opus 5.5 / max**，并开放 Claude Code harness 的
+**原生子 Agent**：worker 可在任务边界内自主委派，由父 Agent 汇总。
+这使局部任务分配、信息传递与结果整合可以留在同一套原生运行机制中，
+预期减少跨执行器协调的阻力。**这是设计假设，尚无受控对照证明更快、更省 token，
+也不代表子 Agent 越多越好。** 模型可用性和原生环境变量支持必须在使用者的 CLI 上确认；
+没有静默降级。这里描述本项目选用的更新配置，不声称是任何时点的“最新最强”。
+
+![方法来源、四文档、Opus 执行、LangWatch 证据与版本化改进闭环](docs/assets/workflow-evolution-v1.2.png)
+
+图中的“演进”是：依据任务记录提出小幅规则修改，验证后形成可回退版本，
+由下一轮新会话加载。**它改变工作流文档，不训练模型权重，也不自动授予权限。**
+LangWatch 收集证据；复盘与采纳仍按授权进行。
+
+## 继承什么，改进什么
+
+| 层次 | 继承的基础 | 本项目的适配 |
+| --- | --- | --- |
+| 规划与验收 | 原任务书、lane、独立验收、约定交付 | 保留四文档结构；小任务少分工、复用有效证据，不削弱原始需求 |
+| 执行 | Claude 主管调度 Codex 的这条原路径 | 主管、worker 与原生子 Agent 使用 Opus 5.5 / max；兼容命令名不变 |
+| 任务隔离 | Herdr pane / worktree / 分支 | 保留；worktree 隔离代码，服务端口仍需任务自己分配 |
+| 决策与恢复 | 监督、通知、恢复流程 | v1.2 明确决策归属、异常分类、有限恢复与副作用核对 |
+| 观测 | 会话与任务状态 | LangWatch + 精确 run/session 关联 + 本地去重证据 |
+| 持续改进 | 成熟的约束文档 | 按授权复盘 → 小改动 → 验证 → Git 版本与回退 → 新任务加载 |
+
+四份核心文档继续作为唯一调度规范：
+
+| 文件 | 负责什么 |
 | --- | --- |
-| `source/herdr-dispatch/` | 完整原插件、四文档修订、许可证及其既有 Git 历史 |
-| `scripts/` | 原启动入口、pane 环境准备、Claude 状态探针及测试 |
-| `runtime/herdr.toml` | 本机 Herdr 配置快照 |
-| `observability/` | 本地采集、复盘材料生成与人工授权策略；不自动调用模型 |
-| `observability/langwatch/` | Docker Compose、固定镜像摘要、初始化/查询代码及采集适配器 |
-| `demo/` | 合成示例源文件与测试；不含原示例仓库的 `.git` |
-| `AGENTS.md`、`CLAUDE.md` | 原工程入口约定快照 |
-| `SNAPSHOT.json` | 来源提交、四文档与配套文件哈希、排除范围和本机绑定说明 |
+| [SKILL.md](source/herdr-dispatch/skills/dispatch-codex/SKILL.md) | 入口、边界、加载路径 |
+| [plan.md](source/herdr-dispatch/skills/_shared/plan.md) | 需求、分工、任务书、验收与交付约定 |
+| [supervise.md](source/herdr-dispatch/skills/_shared/supervise.md) | 监督、证据复用、独立验收、交付 |
+| [driver.md](source/herdr-dispatch/skills/dispatch-codex/references/driver.md) | Opus 执行配置、状态读取、审批与恢复 |
 
-不包含业务仓库、worktree、运行报告、真实会话、数据库、Docker volumes、登录信息、
-LangWatch 私密目录或下载依赖。测试中的 JSONL 是合成夹具。原说明中指向 `evidence/`
-的历史验证链接保留在本机，未随本仓库上传。
+## v1.2 的重点
 
-## 版本与使用边界
+- **决策有人负责**：主管决定已授权范围内的常规实现与恢复；只把指定异常交给获授权的复盘者。
+  扩大范围、预算或权限，以及降低验收要求，仍由用户决定。
+- **识别真正的停滞**：API 报错需要及时诊断；长测试不因耗时被中断；
+  `mtime`、`away_summary` 或重复汇报不算业务进展。
+- **恢复有边界**：先确认工具是否仍在运行、上次操作有无副作用；有限续跑，避免重复执行。
+- **验收不缩水**：同时对照原始需求和 lane 标准，区分事实、推断与未查明原因。
+- **规则保持克制**：尽量替换旧句、合并重复约束，四文档总篇幅不超过 v1.1。
 
-- `main`：完整工程的版本分支；首个整体快照标签为 `bundle-v1.0.0`。
-- `workflow-v1.0.0` / `workflow-v1.1.0`：原插件修改前/后的标签，提交和内容保持不变。
-  这两个历史标签采用插件位于仓库根目录的旧布局，不能当作整个工程快照。
-- 当前四份正文仍是 `workflow-v1.1.0`，本次归档未改变调度规则或执行配置。
-- [版本比较、探索与回退](source/herdr-dispatch/WORKFLOW-VERSIONS.md)。
+这些是已经写入文档的调度规则。**v1.2 未包含可用的自动审批/唤醒桥，也未完成新版本
+端到端业务实跑。** 原生 `/goal` 未启用；影子门控不会自动调用 Astra；
+没有无人值守的自动改写、自动采纳或“永不卡住”的保证。
+[完整版本与回退说明](source/herdr-dispatch/WORKFLOW-VERSIONS.md) ·
+[发布验证](docs/release-v1.2.md)
 
-这是**源码与配置备份**，当前运行仍在
-`/Users/wangxian/Documents/ChatGPT/开发/herdr-workflow-fresh-20260926`。
-此次没有迁移、启动或重启业务 Agent、Herdr 或 LangWatch。
+## 从这里开始
 
-`driver.md` 的 `<ROOT>`、`runtime/herdr.toml` 的 worktree 目录仍指向原工程；
-Herdr session、Compose project 和网页端口也保留原值。需要从新路径运行或另建并行环境时，
-先明确部署目录并调整这些绑定，恢复本机依赖与私密配置，再用原入口启动全新会话/run。
-不要直接用本副本的部署命令操作正在运行的同名环境，也不要把旧会话 resume 当作换版。
+```sh
+git clone https://github.com/WXD7/herdr-opus-workflow.git
+cd herdr-opus-workflow
+./scripts/start-claude.sh --check
+```
 
-原始执行依赖包括本机 Herdr、官方登录的 Claude Code、zsh、Python 3.13、Node.js，
-本地 LangWatch 部署另需 Docker。下载依赖和凭据不通过 Git 分发。
+这一步只展示模型、子 Agent 环境与插件配置，**不调用模型，也不证明账号可用或遥测已接通**。
+实际使用依赖 Herdr、官方 Claude Code 登录与模型权限、zsh、Python 3.13、Node.js，
+本地 LangWatch 另需 Docker。当前入口以项目内的 `demo/` 为起点，不能不经配置就用于任意外部仓库。
 
-## 来源
+随后阅读 [本地准备与启动](docs/setup.md)，在真实 Herdr pane 中开启全新会话，
+使用原命令 `/herdr-dispatch:dispatch-codex`。新规则不会热更新到旧会话；
+启动时记录插件路径、Git 版本和四文档哈希。不要用 resume 冒充升级。
 
-插件来自 [bestony/herdr-dispatch](https://github.com/bestony/herdr-dispatch)，原 MIT
-许可证保留在 `source/herdr-dispatch/LICENSE`。LangWatch 纯函数来源和哈希见
-`observability/langwatch/instrumentation/upstream-source.json`，对应许可证已保留。
-上游提交、原适配提交和本次副本核对依据见 `SNAPSHOT.json`。
+三个合成示例见 [examples.md](docs/examples.md)：
+小范围清理、独立函数开发，以及根据一轮任务证据改进工作流。
+示例是使用方法，不是性能基准或成功率报告。
+
+## 观测与演进
+
+[观测说明](observability/README.md) ·
+[LangWatch 配置](observability/langwatch/README.md) ·
+[复盘契约](observability/astra-review-contract.md)
+
+用任务是否验收通过、缺陷、人类介入、完成时延和包含失败尝试的成本共同评价。
+区分输入、缓存与输出，不用工具调用次数推算 token 浪费，不把费用估价当订阅账单。
+原生子 Agent 与独立 worker 的关系应以实际记录核对，覆盖不完整时明确保留未知。
+
+默认一次复盘针对一个明确范围，最多提出三个可验证候选；同一证据不重复分析。
+当前采集、影子规则和证据包工具可以本地运行，自动唤醒与自动采纳仍是后续工作。
+
+## 来源、许可与公开范围
+
+- 原方法与插件：[白宦成（Bestony）](https://github.com/bestony) /
+  [herdr-dispatch](https://github.com/bestony/herdr-dispatch)，保留 [MIT 许可](source/herdr-dispatch/LICENSE)。
+- 改编、Opus 适配与观测整合：WXD7；本项目独立维护，不代表原作者或相关产品官方认可。
+- [LangWatch](https://github.com/langwatch/langwatch) 是独立观测项目；
+  本仓库提取的 npm 纯函数保留[来源哈希](observability/langwatch/instrumentation/upstream-source.json)
+  与[对应许可](observability/langwatch/instrumentation/LICENSE.langwatch)。
+- 原创增补代码与文档采用 [MIT](LICENSE)。图由 ImageGen 生成并人工检查，
+  [图示说明与提示词](docs/assets/imagegen-prompt.md) 随仓库提供。
+
+仓库分发 workflow、插件、采集适配器、配置和合成示例；
+不分发业务代码、实际会话、运行报告、凭据、数据库或登录状态。
+旧 Git 历史保留原有来源信息和本机路径，不能当成可复制部署参数。
