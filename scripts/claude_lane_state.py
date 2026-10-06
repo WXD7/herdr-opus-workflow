@@ -93,7 +93,8 @@ def within(cwd, checkout, cache):
     return cache[cwd]
 
 
-def probe(session, checkout, transcript=None, home=None, tail_bytes=TAIL_BYTES):
+def probe(session, checkout, transcript=None, home=None, tail_bytes=TAIL_BYTES,
+          context_path=None, context_hash=None):
     result = {'session': session, 'turn_state': 'unknown', 'used_pct': None, 'compactions': None,
               'compactions_partial': None, 'mtime': None, 'probe': 'unavailable', 'reason': None,
               'last_event': None, 'last_event_at': None, 'goal_status': None, 'out_of_room': None,
@@ -110,7 +111,20 @@ def probe(session, checkout, transcript=None, home=None, tail_bytes=TAIL_BYTES):
     if not checkout or not os.path.isabs(checkout):
         return unavailable('checkout must be an absolute path')
     checkout = Path(checkout).resolve()
-    if checkout != ROOT and ROOT not in checkout.parents:
+    context_path = context_path or os.environ.get('HERDR_EXPERIMENT_CONTEXT')
+    pointer = ROOT / 'context-pointer.json'
+    if not context_path and pointer.is_file():
+        reference = json.loads(pointer.read_text())
+        context_path, context_hash = reference['path'], reference['hash']
+    if context_path:
+        try:
+            import sys
+            if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT))
+            from experiments.snapshots import load_context
+            load_context(context_path, context_hash, cwd=checkout)
+        except (OSError, ValueError, KeyError) as error:
+            return unavailable('experiment scope verification failed: ' + str(error))
+    elif checkout != ROOT and ROOT not in checkout.parents:
         return unavailable('checkout is outside this project: ' + str(checkout))
     if transcript:
         if not os.path.isabs(transcript) or Path(transcript).name != session + '.jsonl':

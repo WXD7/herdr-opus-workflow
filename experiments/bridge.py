@@ -43,6 +43,7 @@ class Bridge:
         try: refs = git(self.engine.runtime_root, 'for-each-ref', '--format=%(refname:short)', 'refs/tags/workflow-*', 'refs/heads/').splitlines()
         except ValueError: refs = []
         return {'version': VERSION, 'worker': data, 'dispatcher_connected': bool(data and data.get('birth') and birth(data['pid']) == data['birth']),
+                'dispatcher_compatible': bool(data and data.get('dispatcher_build') == self.engine.dispatcher_build),
                 'workflow_refs': refs,
                 'models': MODELS, 'efforts': EFFORTS, 'default_profile': DEFAULT_PROFILE,
                 'allowed_repos': [str(p) for p in self.engine.allowed_repos],

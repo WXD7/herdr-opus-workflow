@@ -212,7 +212,13 @@ record until new evidence arrives; never treat notification as an answer or repe
 
 ## §7 Arm the recurring loop
 
-Unless `--no-loop`, arm one `loop` job with this skill's resolving `--resume` invocation, e.g.
+<!-- experiment-completion: disk-v1 -->
+With `HERDR_EXPERIMENT_CONTEXT`, the existing dispatcher handles registered lane DONE events,
+one 15-minute idle fallback per lane session, deduplicated `--resume`, deadline and process cleanup.
+Do not add a model loop, terminal notify-back
+or background wait command; record this event transport instead. A blocked composer remains
+visible for its owner, never cleared automatically. Outside experiments, unless `--no-loop`,
+arm one `loop` job with this skill's resolving `--resume` invocation, e.g.
 `/herdr-dispatch:dispatch-<agent> --resume`. Use the driver's cadence; absent one, use `5m`.
 Record job id, interval and reason. Adjust only when the driver's condition changes: update the
 existing job if supported, otherwise cancel that recorded job before replacing it. Never stack

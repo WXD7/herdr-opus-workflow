@@ -15,9 +15,19 @@ from .resources import Services
 from .snapshots import ROOT, commit, git, workflow_snapshot
 from .store import Store, write_json
 from .herdr import task_prompt
+from .checks import resolve_checks
 
 TERMINAL = {'completed', 'failed', 'cancelled'}
-ACTIVE = {'launching', 'running', 'blocked', 'needs_attention', 'checking', 'cancelling'}
+ACTIVE = {'launching', 'running', 'blocked', 'needs_attention', 'checking', 'cancelling', 'finalizing'}
+
+
+def record_issue(attempt, phase, error):
+    message = str(error)[:1500]
+    attempt.setdefault('error', message)
+    issues = attempt.setdefault('issues', [])
+    if not any(v['phase'] == phase and v['message'] == message for v in issues):
+        issues.append({'phase': phase, 'message': message, 'at': time.time()})
+    attempt['status'] = 'needs_attention'
 
 
 class Engine:
@@ -26,6 +36,11 @@ class Engine:
         self.runtime_root = Path(runtime_root).resolve()
         self.allowed_repos = [Path(p).expanduser().resolve() for p in allowed_repos]
         self.services = Services(self.store)
+        self.dispatcher_build = self._build_signature()
+
+    def _build_signature(self):
+        return digest({str(p.relative_to(self.runtime_root)): hashlib.sha256(p.read_bytes()).hexdigest()
+                       for p in sorted((self.runtime_root / 'experiments').glob('*.py'))})
 
     def repo_allowed(self, value):
         path = Path(value).resolve()
@@ -47,6 +62,11 @@ class Engine:
 
     def get(self, eid):
         item = self.store.read('experiments', eid)
+        for attempt in item['attempts']:
+            path = Path(attempt['outcome_path'])
+            if not attempt.get('business_status') and path.is_file() and path.stat().st_size < 100000:
+                try: attempt['business_status'] = json.loads(path.read_text()).get('status', 'unknown')
+                except (OSError, ValueError): pass
         return item | {'differences': differences(item['config'])}
 
     def update(self, eid, revision, config=None, operations=None, instruction=None):
@@ -87,10 +107,20 @@ class Engine:
                 if item['status'] != 'draft' or item['revision'] != revision:
                     raise ValueError('Only the exact reviewed draft revision can be started')
                 spec = item['config']
+                worker_path = self.store.root / 'worker.json'
+                if worker_path.is_file():
+                    from .resources import birth
+                    worker = json.loads(worker_path.read_text())
+                    if birth(worker['pid']) == worker.get('birth') and worker.get('dispatcher_build') != self.dispatcher_build:
+                        raise ValueError('Connected dispatcher is an older build; cold-start the updated dispatcher before launch')
+                if self._build_signature() != self.dispatcher_build:
+                    raise ValueError('Platform files changed after server startup; restart the configuration server')
                 repo = self.repo_allowed(spec['repo'])
+                commands = resolve_checks(spec['checks'], repo)
                 base = commit(repo, spec['base_ref'])
                 item.update(status='preparing', start_request_id=request_id, base_commit=base,
-                            config_hash=digest(spec), frozen_at=time.time())
+                            config_hash=digest(spec), frozen_at=time.time(), acceptance_commands=commands)
+                item['dispatcher_build'] = self.dispatcher_build
                 self.store.save('experiments', eid, item)
             try:
                 # The exact original tests are retained as an integrity check, in addition
@@ -190,6 +220,8 @@ class Engine:
                 return existing
             if attempt['status'] not in ACTIVE:
                 raise ValueError('This attempt is not active')
+            if attempt.get('result_status') or attempt.get('stop_attempted'):
+                raise ValueError('This attempt is closing or stopped; additional model work requires a fresh authorized run')
             previous = attempt['interventions']
             if previous and time.time() - previous[-1]['at'] < 900:
                 raise ValueError('One intervention per 15 minutes; no automatic retry')
@@ -205,7 +237,9 @@ class Engine:
         if all(s in TERMINAL for s in states):
             item['status'] = 'completed' if all(s == 'completed' for s in states) else 'finished_with_issues'
             item.setdefault('ended_at', time.time())
-            self.store.event('experiment.completed', item['id'], detail={'status': item['status']})
+            if not item.get('completion_event_recorded'):
+                self.store.event('experiment.completed', item['id'], detail={'status': item['status']})
+                item['completion_event_recorded'] = True
         elif any(s in ('needs_attention', 'blocked') for s in states):
             item['status'] = 'needs_attention'
         elif any(s in ACTIVE for s in states):
@@ -232,7 +266,7 @@ class Engine:
         with self.store.lock('worker', blocking=False):
             write_json(self.store.root / 'worker.json', {'at': time.time(), 'session': adapter.session,
                        'caller_pane': adapter.caller, 'pid': os.getpid(), 'birth': birth(os.getpid()),
-                       'capacity': capacity})
+                       'capacity': capacity, 'dispatcher_build': self.dispatcher_build})
             items = self.store.list('experiments')
             active_total = sum(a['status'] in ACTIVE for i in items for a in i['attempts'])
             for item in items:
@@ -248,13 +282,16 @@ class Engine:
                     continue
                 if item['status'] not in ('queued', 'running', 'needs_attention'):
                     continue
+                if item.get('dispatcher_build') != self.dispatcher_build:
+                    # Old frozen runs are historical evidence; never silently hot-upgrade them.
+                    continue
                 self._checkpoint(item)
                 for attempt in item['attempts']:
                     if attempt['status'] in ACTIVE:
                         try:
                             self._observe(item, attempt, adapter)
                         except Exception as error:
-                            attempt.update(status='needs_attention', error=str(error)[:1500])
+                            record_issue(attempt, 'observe', error)
                             self.store.event('attempt.blocked', item['id'], attempt['id'], {'reason': attempt['error']})
                         if attempt['status'] not in ACTIVE:
                             active_total -= 1
@@ -284,20 +321,25 @@ class Engine:
                         attempt['status'] = 'running'
                         self.store.event('attempt.started', item['id'], attempt['id'])
                     except Exception as error:
-                        attempt.update(status='needs_attention', error=str(error)[:1500])
+                        record_issue(attempt, 'launch', error)
                         self.store.event('attempt.blocked', item['id'], attempt['id'], {'reason': attempt['error']})
                     active += 1; active_total += 1
                     self._checkpoint(item)
                 self._checkpoint(item)
 
     def _observe(self, item, attempt, adapter):
+        if attempt.get('target') and attempt['target']['session'] != adapter.session:
+            return
+        if hasattr(adapter, 'track'):
+            adapter.track(attempt)
         elapsed = time.time() - attempt.get('started_at', time.time())
         timed_out = elapsed >= item['config']['timeout_minutes'] * 60
         stop_due = attempt.get('stop_requested') or timed_out
-        if stop_due and attempt.get('stop_attempted'):
-            return  # One stop attempt, including uncertain failures; never resend keys.
-        if attempt['status'] == 'needs_attention' and not stop_due and not any(x['status'] == 'pending' for x in attempt['interventions']):
-            return  # Preserve uncertain outcomes for explicit inspection, never auto-resubmit.
+        if attempt.get('result_status') or attempt.get('stop_attempted'):
+            self._shutdown(item, attempt, adapter)
+            return
+        # Continue read-only observation after an uncertain send. Never resend it;
+        # a delayed turn or a completed report may still resolve the uncertainty.
         if attempt['status'] == 'checking':
             attempt.update(status='needs_attention', error='Interrupted acceptance check; inspect evidence before resuming')
             return
@@ -307,20 +349,40 @@ class Engine:
             return
         if target['session'] != adapter.session:
             return
-        state = adapter.inspect(target)
+        try:
+            state = adapter.inspect(target)
+        except Exception as error:
+            if not stop_due or not attempt.get('cleanup', {}).get('registered_supervisor'):
+                raise
+            record_issue(attempt, 'terminal_inspection', error)
+            attempt.update(stop_attempted=True, stop_reason='timeout' if timed_out else 'requested')
+            self._checkpoint(item)
+            self._shutdown(item, attempt, adapter)
+            return
         status = state.get('status') or state.get('state')
         attempt['herdr_status'] = status
+        report = Path(attempt['outcome_path'])
+        timely_report = report.is_file() and report.stat().st_mtime <= attempt['started_at'] + item['config']['timeout_minutes'] * 60
+        if status in ('idle', 'done') and timely_report and not attempt.get('acceptance_attempted') and not attempt.get('stop_requested'):
+            attempt.update(status='checking', acceptance_attempted=True)
+            self._checkpoint(item)
+            self._accept(item, attempt)
+            if attempt.get('result_status'):
+                self._shutdown(item, attempt, adapter)
+            return
         if stop_due:
             if not attempt.get('stop_attempted'):
                 attempt.update(stop_attempted=True, stop_reason='timeout' if timed_out else 'requested', status='cancelling')
+                if timed_out:
+                    attempt.setdefault('error', 'Run deadline reached; stopping registered processes')
                 self._checkpoint(item)
-                adapter.stop(target)
-                self.services.stop(attempt['id'])
-                attempt['error'] = 'Stop sent to supervisor only; descendant shutdown requires confirmation'
-                attempt['status'] = 'needs_attention'
-                self.store.event('attempt.blocked', item['id'], attempt['id'], {'reason': attempt['error']})
+                # Legacy runs have no registry. Interrupt once but never infer PID ownership.
+                if not attempt.get('cleanup', {}).get('registered_supervisor'):
+                    adapter.stop(target)
+                self._shutdown(item, attempt, adapter)
             return
-        if attempt['status'] != 'needs_attention' and not attempt['prompt_attempted'] and status in ('idle', 'done'):
+        if (attempt['status'] != 'needs_attention' and not attempt['prompt_attempted']
+                and attempt.get('prompt_stage', 'not_started') == 'not_started' and status in ('idle', 'done')):
             attempt['prompt_stage'] = 'preflight'
             self._checkpoint(item)
             def before_submit():
@@ -354,10 +416,57 @@ class Engine:
             self.store.event('attempt.blocked', item['id'], attempt['id'], {'reason': 'Herdr recognized an approval/question; no keys sent'})
         elif status == 'working':
             attempt['status'] = 'running'
-        elif status in ('idle', 'done') and Path(attempt['outcome_path']).is_file():
-            attempt['status'] = 'checking'
+            attempt['activity_observed_at'] = time.time()
+        elif status in ('idle', 'done') and attempt.get('prompt_attempted'):
+            self._wake_completed(item, attempt, adapter)
+
+    def _shutdown(self, item, attempt, adapter):
+        self.services.stop(attempt['id'])
+        complete = adapter.cleanup(attempt, lambda: self._checkpoint(item)) if hasattr(adapter, 'cleanup') else False
+        if complete:
+            result = attempt.get('result_status') or ('failed' if attempt.get('stop_reason') == 'timeout' else 'cancelled')
+            attempt.update(status=result, ended_at=time.time())
+            attempt.pop('shutdown_issue', None)
+            self.store.event('attempt.' + result, item['id'], attempt['id'])
+        else:
+            cleanup = attempt.get('cleanup', {})
+            attempt['status'] = 'finalizing' if cleanup.get('status') == 'stopping' else 'needs_attention'
+            attempt['shutdown_issue'] = cleanup.get('reason', 'Owned descendant shutdown has not been confirmed')
+            # Keep the original validation/dispatch error; cleanup is a separate dimension.
+
+    def _wake_completed(self, item, attempt, adapter):
+        from .lifecycle import completed_lanes
+        if attempt['workflow'].get('completion_transport') != 'disk-v1':
+            return  # Historical rule comparisons retain their explicitly selected transport.
+        lanes = completed_lanes(attempt)
+        if not lanes:
+            return
+        wakes = attempt.setdefault('completion_wakes', {})
+        consumed = {(v['session'], v.get('kind', 'done')) for wake in wakes.values() for v in wake['lanes']}
+        lanes = [v for v in lanes if (v['session'], v.get('kind', 'done')) not in consumed]
+        if not lanes:
+            return
+        key = digest([(v['session'], v.get('kind', 'done')) for v in lanes])
+        wake = wakes.setdefault(key, {'lanes': lanes, 'status': 'pending', 'created_at': time.time()})
+        # An uncertain submission is consumed. Preflight failure sends nothing and
+        # remains visible for an explicit user decision, never clears a composer.
+        if wake['status'] != 'pending':
+            return
+        def intent():
+            wake.update(status='attempted', attempted_at=time.time())
             self._checkpoint(item)
-            self._accept(item, attempt)
+        try:
+            prompt = ('/herdr-dispatch:dispatch-codex --resume\n仅恢复当前实验 ' + item['id'] +
+                      ' 的本组 ' + attempt['id'] + '；会话 ' + attempt['supervisor_session'] +
+                      '。已登记 lane 出现完成/空闲事件，请按原工作流做一次监督与验收。')
+            adapter.prompt(attempt['target'], prompt, before_submit=intent)
+            wake.update(status='submitted', submitted_at=time.time())
+            self.store.event('attempt.completion_wake', item['id'], attempt['id'], {'key': key})
+        except Exception as error:
+            wake.update(status='uncertain' if wake['status'] == 'attempted' else 'not_submitted', error=str(error)[:800])
+            record_issue(attempt, 'completion_wake', error)
+            self.store.event('attempt.blocked', item['id'], attempt['id'], {'reason': attempt['error']})
+        self._checkpoint(item)
 
     def _accept(self, item, attempt):
         path = Path(attempt['outcome_path'])
@@ -365,6 +474,7 @@ class Engine:
             raise ValueError('Completion report too large')
         report = json.loads(path.read_text())
         attempt['reported_summary'] = str(report.get('summary', ''))[:8000]
+        attempt['business_status'] = report.get('status', 'unknown')
         integrity = [rel for rel, sha in item['baseline_test_hashes'].items()
                      if not (Path(attempt['checkout']) / rel).is_file()
                      or hashlib.sha256((Path(attempt['checkout']) / rel).read_bytes()).hexdigest() != sha]
@@ -372,19 +482,28 @@ class Engine:
         env = dict(os.environ) | attempt['runtime_env']
         service_env = Path(attempt['directory']) / 'service-environment.json'
         if service_env.is_file(): env.update(json.loads(service_env.read_text()))
-        for index, command in enumerate(item['config']['checks']):
+        commands = item.get('acceptance_commands') or resolve_checks(item['config']['checks'], attempt['checkout'])
+        for index, resolved in enumerate(commands):
+            command = resolved['argv']
             log = Path(attempt['directory']) / f'acceptance-{index}.log'
             started = time.monotonic()
             # Keep the Popen handle: fast commands must not race a /proc or ps lookup.
             with log.open('wb') as output:
-                process = subprocess.Popen(command, cwd=attempt['checkout'], env=env,
-                    stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+                execution_error = None
                 try:
-                    code = process.wait(timeout=min(300, item['config']['timeout_minutes'] * 60))
+                    remaining = attempt['started_at'] + item['config']['timeout_minutes'] * 60 - time.time()
+                    if remaining <= 0:
+                        raise OSError('Acceptance deadline exhausted; command was not started')
+                    process = subprocess.Popen(command, cwd=attempt['checkout'], env=env,
+                        stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+                    code = process.wait(timeout=min(300, remaining))
                 except subprocess.TimeoutExpired:
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait(); code = None
-            checks.append({'argv': command, 'exit_code': code, 'passed': code == 0,
+                except OSError as error:
+                    code = None; execution_error = str(error)[:800]
+            checks.append({'argv': command, 'requested_argv': resolved['requested_argv'],
+                           'exit_code': code, 'passed': code == 0, 'execution_error': execution_error,
                            'wall_seconds': round(time.monotonic() - started, 3), 'log': str(log)})
         attempt['acceptance'] = {'checks': checks, 'modified_baseline_tests': integrity,
                                  'quality_review': 'not_automatically_scored'}
@@ -398,11 +517,9 @@ class Engine:
         attempt['comparison_eligible'] = attempt.get('configuration_valid') is True
         passed = report.get('status') == 'completed' and checks and all(c['passed'] for c in checks) and not integrity
         if passed and not attempt['working_tree_dirty']:
-            attempt.update(status='completed', ended_at=time.time())
-            self.store.event('attempt.completed', item['id'], attempt['id'])
+            attempt.update(status='finalizing', result_status='completed')
         elif report.get('status') == 'failed' or integrity or any(not c['passed'] for c in checks):
-            attempt.update(status='failed', ended_at=time.time())
-            self.store.event('attempt.failed', item['id'], attempt['id'])
+            attempt.update(status='finalizing', result_status='failed')
         else:
             attempt.update(status='needs_attention', error='Independent checks or clean commit are incomplete; actual-profile confidence is reported separately')
             self.store.event('attempt.blocked', item['id'], attempt['id'], {'reason': attempt['error']})
@@ -451,11 +568,13 @@ class Engine:
                 'groups': [{k: a.get(k) for k in ('id', 'group_id', 'label', 'profile', 'status', 'branch',
                            'checkout', 'head', 'diffstat', 'acceptance', 'reported_summary', 'configuration_valid',
                            'observed', 'comparison_eligible', 'usage', 'error', 'evidence_gap', 'evidence_path', 'interventions',
-                           'prompt_stage', 'prompt_attempted', 'prompt_submitted', 'prompt_submitted_at', 'stop_reason')}
+                           'prompt_stage', 'prompt_attempted', 'prompt_submitted', 'prompt_submitted_at', 'stop_reason',
+                           'business_status', 'result_status', 'cleanup', 'shutdown_issue', 'completion_wakes', 'issues')}
                            | {'elapsed_seconds': round(a.get('ended_at', time.time()) - a['started_at'], 2) if a.get('started_at') else None,
                               'services': self.services._read(a['id'])}
                            for a in item['attempts']],
                 'limitations': ['No automatic winner or quality score; compare the common acceptance and actual artifacts.',
                                 'Multiple changed factors compare whole configurations, not individual causes.',
                                 'Unknown usage/effort/descendant coverage remains unknown; failed attempts are retained.',
-                                'Timeout interrupts the owned supervisor; it is not a hard account/token spending cap.']}
+                                'Completion and shutdown are separate. Exact registered processes are stopped; legacy ownership remains unknown.',
+                                'This is not an account-wide or remote-provider token spending cap.']}

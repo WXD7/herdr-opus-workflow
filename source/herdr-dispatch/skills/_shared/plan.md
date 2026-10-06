@@ -255,7 +255,12 @@ Then the load-bearing part:
 re-nudges (§6c `idle_incomplete`) it is the only thing that tells the next nudge where to resume, so
 the driver may strengthen this paragraph — never weaken it.
 
-Then the notify-back, so a finished lane rings the orchestrator instead of sitting undiscovered
+In a frozen experiment (`HERDR_EXPERIMENT_CONTEXT` set), the brief ends with:
+> Write `.dispatch/DONE`, then finish your turn. The existing dispatcher observes the registered
+> lane and wakes the supervisor once; do not type a notify-back into another agent's composer.
+Use this instead of the following terminal notify-back; do not combine the two transports.
+
+Outside experiments, the notify-back rings the orchestrator instead of sitting undiscovered
 until the next §7 tick. Write it into the brief with `<orch-pane>` (the §2 `orchestrator_pane`),
 `<run-id>`, `<lane>` and `<skill>` already substituted — the lane runs it verbatim:
 

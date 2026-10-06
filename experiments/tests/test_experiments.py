@@ -101,6 +101,7 @@ class FakeHerdr:
         if before_submit: before_submit()
         self.prompts.append((t['name'],text));self.states[t['name']]='working'
     def stop(self,t): self.stops.append(t['name'])
+    def cleanup(self,attempt,checkpoint): return bool(attempt.get('result_status'))
 
 
 class QueueTests(Fixture):

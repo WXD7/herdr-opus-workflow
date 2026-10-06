@@ -81,7 +81,7 @@ class Herdr:
         agent['status'] = agent.get('status') or agent.get('agent_status') or agent.get('state')
         return agent
 
-    def prompt(self, target, prompt, before_submit=None):
+    def prompt(self, target, prompt, before_submit=None, require_activity=True):
         current = self.inspect(target)
         status = current.get('status') or current.get('state')
         if status not in ('idle', 'done'):
@@ -92,11 +92,20 @@ class Herdr:
         if before_submit is not None:
             before_submit()  # Persist the send intent only after successful read-only preflight.
         # Herdr rejects recognized approval dialogs again at submission time.
-        return self.call('agent', 'prompt', target['name'], prompt)
+        flags = ('--wait', '--until', 'working', '--timeout', '5000') if require_activity else ()
+        return self.call('agent', 'prompt', target['name'], prompt, *flags, timeout=10)
 
     def stop(self, target):
         self.inspect(target)
         return self.call('agent', 'send-keys', target['name'], 'ctrl+c')
+
+    def track(self, attempt):
+        from .lifecycle import track
+        return track(attempt)
+
+    def cleanup(self, attempt, checkpoint):
+        from .lifecycle import shutdown
+        return shutdown(attempt, checkpoint)
 
     def read(self, target):
         self.inspect(target)

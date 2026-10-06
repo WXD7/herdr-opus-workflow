@@ -120,7 +120,7 @@ the recorded Herdr checkout.
 - 执行：记录本组实际选定的 Claude 模型／effort，使用 LangWatch wrapper；兼容命令名不变。
 - 权限：auto，禁止 bypass；主管按 §6g 处理已授权范围内审批，越界交给用户。
   worktree 是代码隔离而非 OS 沙箱；`--no-yolo` 保持此姿态，`--yolo` 被拒绝。
-- 续跑：普通 prompt，后台结果触发续跑；空闲未完成时读 progress 再续跑。兜底默认 15 分钟，
+- 续跑：实验使用 §7 的确定性 DONE 事件，不建后台等待/模型定时器；非实验普通 prompt，空闲未完成读 progress 再续跑。兜底默认 15 分钟，
   正常推进可延至 30 分钟、恢复时缩至 5 分钟。账号限额共享，无可靠限流或上下文百分比，
   不启用 /goal，不按 used_pct（恒为 null）压缩。
 
@@ -145,7 +145,7 @@ shell means it did not — read the error it left, and retry once with a **new**
 
 **Then prime the lane** — one call, only after the input box is visible:
 
-    herdr agent prompt <lane> "Read .dispatch/TASK.md in this directory and work through its checklist in order. Keep .dispatch/progress.md updated after every item — assume your context may be compacted at any time and that file is all you keep. Write .dispatch/DONE only when every checklist item is done, every acceptance criterion in TASK.md verifiably holds and git status is clean, then run the notify-back command TASK.md gives you."
+    herdr agent prompt <lane> "Read .dispatch/TASK.md in this directory and work through its checklist in order. Keep .dispatch/progress.md updated after every item — assume your context may be compacted at any time and that file is all you keep. Write .dispatch/DONE only when every checklist item is done, every acceptance criterion in TASK.md verifiably holds and git status is clean, then follow the completion transport TASK.md gives you."
 
 Record phase `implementing`. After launching all lanes, do the first landing sweep immediately.
 A missing transcript means priming may not have landed: inspect the pane and resolve it (§6g)

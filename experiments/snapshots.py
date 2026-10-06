@@ -77,7 +77,9 @@ def workflow_snapshot(destination, selected, runtime_root=ROOT):
                       if path.is_file() and 'private' not in path.relative_to(destination).parts
                       and path.suffix in ('.py', '.sh', '.zsh', '.cjs', '.html', '.js', '.css')}
     provenance = {'ref': ref, 'commit': sha, 'dirty': dirty, 'four_document_sha256': hashes,
-                  'adapter': adapter, 'adapter_commit': commit(runtime_root, 'HEAD'),
+                  'adapter': adapter,
+                  'completion_transport': 'disk-v1' if b'experiment-completion: disk-v1' in content[RULE_FILES[2]] else 'legacy-terminal',
+                  'adapter_commit': commit(runtime_root, 'HEAD'),
                   'adapter_dirty': bool(git(runtime_root, 'status', '--porcelain')),
                   'adapter_sha256': digest(adapter_hashes), 'adapter_files': adapter_hashes,
                   'plugin_dir': str(plugin), 'runtime_root': str(destination)}

@@ -157,6 +157,10 @@ def prepare(tool, args, check=False):
                       'herdr.group_id': experiment['group_id'], 'herdr.attempt_id': experiment['attempt_id'],
                       'herdr.requested_model': experiment['profile']['model'],
                       'herdr.requested_effort': experiment['profile']['effort']})
+        sessions = [args[i+1] for i, arg in enumerate(args[:-1]) if arg in ('--session-id', '--resume')]
+        sessions += [arg.split('=', 1)[1] for arg in args if arg.startswith(('--session-id=', '--resume='))]
+        role = 'supervisor' if sessions == [experiment['supervisor_session']] else 'worker'
+        attrs['herdr.role'] = role
     if env.get('HERDR_LANGWATCH_SYNTHETIC') == '1':
         attrs['herdr.synthetic'] = 'true'
     env.update({
@@ -236,6 +240,11 @@ def main():
                             'global_files_written': False, 'loopback_proxy_bypass': True}, indent=2))
         return
     # argv[0] stays the tool name so Herdr identifies the pane's agent by process name.
+    if env.get('HERDR_EXPERIMENT_CONTEXT'):
+        from experiments.snapshots import load_context
+        from experiments.lifecycle import register
+        frozen = load_context(env['HERDR_EXPERIMENT_CONTEXT'], env['HERDR_EXPERIMENT_CONTEXT_HASH'], Path.cwd())
+        register(frozen, env['HERDR_EXPERIMENT_CONTEXT'], args, executable)
     os.execvpe(executable, [tool] + args, env)
 
 

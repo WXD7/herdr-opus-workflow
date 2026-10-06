@@ -65,7 +65,7 @@ def run(directory, session, trusted_cwd=None):
         def intent():
             proof['local_help_attempted'] = True
             write_json(directory / 'result.json', proof)
-        proof['local_help_response'] = transport.prompt(target, '/help', before_submit=intent)
+        proof['local_help_response'] = transport.prompt(target, '/help', before_submit=intent, require_activity=False)
         proof['local_help_submitted'] = True
         # Herdr confirms ordered keystrokes, not that Claude has rendered the command yet.
         time.sleep(1)

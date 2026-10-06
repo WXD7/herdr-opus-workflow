@@ -16,7 +16,7 @@
 <div id="groups"></div>
 <div class="language"><label for="instruction">用一句话调整配置</label><div class="inline"><input id="instruction" placeholder="复制 A 为 D；D 用 Fable 5 medium；并行 2 组"><button id="apply">应用到草稿</button></div><div class="hint">本地解析明确指令，不调用模型；Dot 也可直接提交结构化修改。</div></div>
 <div class="footer"><div class="inline"><select id="presets" aria-label="选择配置预设"><option value="">选择预设</option></select><button id="save-preset">保存预设</button></div><div class="inline"><button id="save">保存草稿</button><button id="clone" hidden>复制为新任务</button><button id="start" class="primary">冻结配置并开始</button></div></div>
-<p class="hint">运行前冻结代码起点和规则版本。最长时间触发主管中断，不是账户 token 硬上限；子进程停止需核验。Astra 复盘需另行授权。</p>
+<p class="hint">运行前冻结代码起点和规则版本。到期停止已登记进程，核验退出后完成收尾；不是账户 token 硬上限。Astra 复盘需另行授权。</p>
 </section>
 <section id="run" hidden><div class="section-heading"><h2>运行与结果</h2><div class="inline"><button id="refresh">刷新证据</button><button id="stop">请求停止本任务</button></div></div><div id="run-status" class="muted"></div><div id="results"></div><details><summary>冻结的配置与证据索引</summary><pre id="evidence"></pre></details><p class="hint">未知用量保留为未知。失败及取消的组也计入报告；多因素变化只比较整套配置，不自动宣布优胜者。</p></section>
 </main></div></body></html>
