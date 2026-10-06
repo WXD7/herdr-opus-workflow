@@ -21,6 +21,8 @@ def main(argv=None):
     serve_parser.add_argument('--port', type=int, default=0)
     worker = commands.add_parser('worker', help='Attach a deterministic dispatcher from a genuine Herdr pane')
     worker.add_argument('--capacity', type=int, default=4); worker.add_argument('--session'); worker.add_argument('--once', action='store_true')
+    launch = commands.add_parser('prepare-launch', help='Prepare a new native Herdr session entry; does not launch Herdr or models')
+    launch.add_argument('--capacity', type=int, default=2)
     commands.add_parser('status')
     commands.add_parser('mcp', help='Local stdio tools for a connected Codex/Dot task')
     call = commands.add_parser('call'); call.add_argument('tool'); call.add_argument('arguments', nargs='?', default='{}')
@@ -62,7 +64,10 @@ def main(argv=None):
         os.execvpe(command[0], command + supplied, dict(os.environ) | env)
     engine = Engine(args.state_dir, args.allow_repo)
     bridge = Bridge(engine)
-    if args.command == 'status':
+    if args.command == 'prepare-launch':
+        from .launch import prepare
+        print(json.dumps(prepare(engine, args.capacity), ensure_ascii=False, indent=2))
+    elif args.command == 'status':
         print(json.dumps(bridge.status(), ensure_ascii=False, indent=2))
     elif args.command == 'call':
         print(json.dumps(bridge.call(args.tool, json.loads(args.arguments)), ensure_ascii=False, indent=2))
@@ -96,26 +101,30 @@ def main(argv=None):
         from .herdr import Herdr
         if not 1 <= args.capacity <= 32: raise ValueError('capacity must be 1–32')
         adapter = Herdr(args.session)
-        engine.services.recover()
-        print(json.dumps({'dispatcher': 'connected', 'session': adapter.session, 'caller_pane': adapter.caller,
-                          'model_heartbeat': False}), flush=True)
-        while True:
-            engine.tick(adapter, args.capacity)
-            if args.once: break
-            time.sleep(5)  # Local deterministic status checks, never an LLM heartbeat.
+        # A lock for the whole lifetime prevents two startup panes alternating ticks
+        # against different sessions. The inner worker lock still protects each tick.
+        with engine.store.lock('dispatcher', blocking=False):
+            engine.services.recover()
+            print(json.dumps({'dispatcher': 'connected', 'session': adapter.session, 'caller_pane': adapter.caller,
+                              'model_heartbeat': False}), flush=True)
+            while True:
+                engine.tick(adapter, args.capacity)
+                if args.once: break
+                time.sleep(5)  # Local deterministic status checks, never an LLM heartbeat.
     elif args.command == 'serve':
-        server, bridge = serve(engine, args.port)
-        stopped = threading.Event()
-        def events():
-            while not stopped.wait(5):
-                try: bridge.events.deliver()
-                except (OSError, ValueError): pass
-        threading.Thread(target=events, daemon=True).start()
-        url = f'http://127.0.0.1:{server.server_port}'
-        print(json.dumps({'url': url, 'token_file': str(engine.store.root / 'access-token'),
-                          'model_invoked': False, 'dispatcher_connected': bridge.status()['dispatcher_connected']}), flush=True)
-        try: server.serve_forever(poll_interval=.25)
-        finally: stopped.set(); server.server_close()
+        with engine.store.lock('dashboard', blocking=False):
+            server, bridge = serve(engine, args.port)
+            stopped = threading.Event()
+            def events():
+                while not stopped.wait(5):
+                    try: bridge.events.deliver()
+                    except (OSError, ValueError): pass
+            threading.Thread(target=events, daemon=True).start()
+            url = f'http://127.0.0.1:{server.server_port}'
+            print(json.dumps({'url': url, 'token_file': str(engine.store.root / 'access-token'),
+                              'model_invoked': False, 'dispatcher_connected': bridge.status()['dispatcher_connected']}), flush=True)
+            try: server.serve_forever(poll_interval=.25)
+            finally: stopped.set(); server.server_close()
 
 
 if __name__ == '__main__':

@@ -19,6 +19,27 @@
 `workflow_compare` 返回包括失败组的结果；`workflow_instruction` 受一次发送和频率限制。
 复杂自然语言交给 Dot 转成相同操作，不加一个后台配置模型。
 
+### 用已连接的电脑试跑
+
+Dot 须先在其 Computers 设置中获得本机访问；云端电脑不能直接读取本机路径。
+参见 [OpenAI：Dot 的电脑与应用](https://learn.chatgpt.com/docs/dots/computers-and-apps)。
+连接后可由本机任务调用上述 MCP，或直接调用相同 CLI；不必先部署公网服务。
+
+```sh
+./scripts/start-claude.sh --experiments --state-dir /absolute/private-trial --allow-repo /absolute/business-repo prepare-launch --capacity 2
+```
+
+此命令只生成本次专属的 `launch-herdr.command`、`dashboard.command` 和 Herdr 配置。
+打开前者会启动独立命名的新 Herdr 会话，由原生 `terminal.default_shell` 在协调 pane
+启动现有 dispatcher；业务 pane 仍为普通 zsh，全部沿用原 workflow。没有伪造 pane 环境、
+恢复旧会话或改全局配置。两种服务均有进程生命周期锁，重复打开不会出现第二个调度器。
+这只是便捷接线，不是另一套 Agent 提示词或调度框架。
+
+使用者在页面或 Dot 中确认同一草稿后才调用 `workflow_start`；重试复用 request_id。
+先确认 `workflow_status.dispatcher_connected`，再核对各组实际会话与配置。
+生成文件与通过单元测试不代表实际 Herdr 启动、模型可用或 Dot 账号连接已验证。
+若客户端无本机访问／操作能力，报告缺失条件；勿改用云端另做一份业务实现。
+
 ## 云端事件
 
 [OpenAI MCP Events 文档](https://developers.openai.com/plugins/build/mcp-events)说明 Dot
