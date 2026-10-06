@@ -15,6 +15,32 @@ fi
 typeset _lw_script_path="${(%):-%x}"
 typeset _lw_project_root="${_lw_script_path:A:h:h}"
 typeset _lw_wrapper_bin="$_lw_project_root/observability/langwatch/instrumentation/bin"
+# Frozen adapters carry a local pointer so newly created Herdr lane shells load the same group.
+if [[ -z "${HERDR_EXPERIMENT_CONTEXT:-}" && -f "$_lw_project_root/context-pointer.json" ]]; then
+  export HERDR_EXPERIMENT_CONTEXT="$(python3.13 -c 'import json,sys; print(json.load(open(sys.argv[1]))["path"])' "$_lw_project_root/context-pointer.json")"
+  export HERDR_EXPERIMENT_CONTEXT_HASH="$(python3.13 -c 'import json,sys; print(json.load(open(sys.argv[1]))["hash"])' "$_lw_project_root/context-pointer.json")"
+fi
+if [[ -n "${HERDR_EXPERIMENT_CONTEXT:-}" ]]; then
+  typeset _lw_exports
+  if ! _lw_exports="$(python3.13 "$_lw_project_root/scripts/experiment.py" profile-env)"; then
+    print -u2 'Frozen experiment configuration or cwd failed validation.'
+    return 2
+  fi
+  eval "$_lw_exports"
+  if [[ "$1" != "$HERDR_LANGWATCH_RUN_ID" ]]; then
+    print -u2 'Worker telemetry identity conflicts with the frozen group.'
+    return 2
+  fi
+  export HERDR_LANGWATCH_ROLE="${2:-worker}"
+  export PATH="$_lw_wrapper_bin:$PATH"
+  rehash
+  if [[ "$(command -v claude)" != "$_lw_wrapper_bin/claude" ]]; then
+    print -u2 'Claude wrapper was not selected.'
+    return 2
+  fi
+  unset _lw_script_path _lw_project_root _lw_wrapper_bin _lw_exports
+  return 0
+fi
 case "${PWD:A}/" in
   "$_lw_project_root/"*) ;;
   *) print -u2 'cd to this workflow project or its worktree before sourcing this script.'

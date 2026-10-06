@@ -2,23 +2,28 @@
 
 Everything in `dispatch-codex` that depends on the agent itself. The skill keeps its codex name for
 compatibility only (`../SKILL.md`); every lane here is **Claude Code**, launched as herdr
-`--kind claude` with model `claude-opus-5-5` at effort `max`. The agent-independent halves are
+`--kind claude` with the selected group profile (default `claude-opus-5-5` / `max`). The independent halves are
 `references/plan.md` (§2–§4, §5b) and `references/supervise.md` (§6b, §6e, §6f, §6i, §7, §8);
 §0 and §1 are in `../SKILL.md`.
 
-`<ROOT>` is the absolute bundle root containing `scripts/` and `observability/`, resolved from
-the loaded `source/herdr-dispatch` plugin. Record it; never substitute an old runtime or cache.
+`<ROOT>` is `HERDR_WORKFLOW_ROOT` when supplied by a frozen experiment; otherwise resolve the
+bundle containing `scripts/` and `observability/` from the loaded plugin. Never use an old cache.
 
-**(verified)** covers local Claude Code **2.1.280** launch flags and the transcript fields used
-below; **(herdr, verified)** covers agent-independent Herdr behavior. The adapted launch and
-ordinary supervision ran locally before this release; private run evidence is not distributed.
-**(unverified)** marks recovery/UI behavior not established by that run: inspect its actual result.
-Record the installed CLI version; a mismatch is a report line, not an abort. No Codex rollout or
-goals database applies, and this driver does not enable native `/goal`.
+Local launch/transcript behavior was checked on Claude Code 2.1.280; record the installed CLI
+version. Historical supervision ran locally; the configurable experiment adapter still needs
+live Herdr/account validation. **(unverified)** marks unestablished recovery/UI behavior.
+No Codex rollout/goals database applies; native `/goal` is disabled.
 
 ---
 
 ## §5a Pre-flight the pane
+
+With `HERDR_EXPERIMENT_CONTEXT`, validate it through `<ROOT>/scripts/experiment.py profile-env`.
+Record its group/attempt, requested profile and four-document hashes. Its hash-checked
+snapshot bounds cwd and pins the platform adapter; it is provenance, not an OS sandbox. The
+wrapper enforces selected model/effort; unknown observed values remain unknown. Rule edits
+require a new attempt. `HERDR_EXECUTOR_MODEL` / `HERDR_EXECUTOR_EFFORT` below come from that
+validated context; absent a context, use Opus 5.5/max. Never infer actual usage from these flags.
 
 **Workflow version.** On a fresh run, record `state.workflow`: actual plugin path, Git commit,
 `git describe --tags --match 'workflow-v*' --always`, dirty status, and SHA-256 of
@@ -31,17 +36,13 @@ supervisor's timer/steering, leaving workers untouched. Do not overwrite the rec
 reuse old acceptance blindly. A new version normally starts with a fresh supervisor/run; an
 authorized handoff reloads all four files and records old/new versions and retained evidence.
 
-A fresh worktree is not a working environment: no `node_modules/`, no `.env`, no `.venv`, because
-those are untracked or ignored.
+Prepare ignored dependencies and secrets explicitly for each fresh worktree.
 
-Once per run, record the launcher's `HERDR_DISPATCH_SUPERVISOR_SESSION` as
-`state.orchestrator_session`, and its `HERDR_LANGWATCH_RUN_ID` as `state.telemetry_run_id`.
-Read these exact environment variables from the supervisor shell; never choose a recent session.
-The business `state.run_id` still follows the unchanged shared §2 algorithm. These two run ids
-may differ: preserve their mapping, and use **telemetry_run_id** for every worker's collector
-labels so supervisor and workers appear under the same LangWatch run. A resumed supervisor
-updates its recorded session to the exact one the launcher supplied. Missing identity or
-telemetry labels must be resolved before dispatch rather than guessed.
+Record `HERDR_DISPATCH_SUPERVISOR_SESSION` as `state.orchestrator_session` and
+`HERDR_LANGWATCH_RUN_ID` as `state.telemetry_run_id` from this supervisor's environment.
+Keep the shared §2 business run_id and its telemetry mapping; every worker uses the recorded
+telemetry label. On resume record the launcher's exact session; missing identity/labels blocks
+dispatch. Never select a recent session as a substitute.
 
 Local Git compatibility for shared §5b: linked worktree `.git` is a file. Resolve the original
 `.dispatch/` exclusion target with `git -C <checkout> rev-parse --path-format=absolute --git-path
@@ -57,16 +58,14 @@ checkout):
 environment is set, and everything after it relies on the pane's shell keeping it. The script
 (maintained in `<ROOT>` — not this skill's to write or patch):
 
-- refuses to run outside a herdr pane or from a cwd outside `<ROOT>`, so lane checkouts must live
-  inside that tree;
+- refuses a non-Herdr pane or cwd outside the frozen group (legacy: outside `<ROOT>`);
+  its frozen context pointer also configures new lane shells, which do not inherit caller env;
 - exports the LangWatch labels (`HERDR_LANGWATCH_RUN_ID`, `HERDR_LANGWATCH_ROLE`) and puts the
   project's existing LangWatch wrapper first on `PATH`, then checks that `claude` resolves to it;
-- exports the sub-agent profile — `CLAUDE_CODE_SUBAGENT_MODEL=claude-opus-5-5`,
-  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`, `CLAUDE_CODE_EFFORT_LEVEL=max`, depth 3, 20 concurrent — so
-  Claude Code's native Agent tool runs Opus 5.5 at max with no custom agent definition or role
-  prompt. Depth and concurrency are ceilings, not per-task targets: the lane decides whether its
-  task needs sub-agents at all; no plan or prompt demands a fan-out, and none turns them off
-  globally.
+- exports the frozen group's child model, effort and depth/concurrency ceilings (legacy default:
+  Opus 5.5/max, depth 3, concurrency 20). Native Agent use stays within the lane boundary; no custom
+  role prompts or required fan-out. When this group explicitly disables native children, the
+  wrapper denies Agent/Task tools. The original supervisor/lane workflow remains intact.
 
 Any error it prints stops that lane: report it, and never work around it — least of all by passing
 an absolute executable path to `agent start`. The Claude CLI inherits the machine's official Claude
@@ -76,14 +75,10 @@ Then, in the same pane:
 
     herdr pane run <pane> "claude --version"
 
-Run the version, not `command -v`: it goes through the wrapper and the real CLI behind it — the path
-`agent start` will take. Record it once per run (§2); this driver's (verified) claims are bound to
-2.1.280.
+Use `claude --version` through the wrapper; record the real CLI once per run (§2).
 
-Then poll `herdr pane read <pane> --source visible`. Two CLI traps here (herdr, verified):
-`herdr pane read` with **no `--source`** returns empty output with exit code 0, and
-`herdr pane wait-output` only matches output arriving *after* the call, so it times out on a command
-that already finished. Poll `--source visible` instead of waiting.
+Read `herdr pane read <pane> --source visible`: omitting source can return empty output;
+wait-output observes only future output and can miss an already completed command.
 
 - `claude` not found, or the version refuses to resolve → stop that lane and report it.
   `agent start --kind claude` launches `claude` through the pane's own shell and args cannot redirect
@@ -104,18 +99,16 @@ Then write the brief (§5b in `references/plan.md`) before launching.
 
     python3 -c 'import uuid; print(uuid.uuid4())'
 
-Record it as the lane's `session` and rewrite the state file, *then* launch. The uuid is the lane's
-identity for the rest of the run: it names the transcript §6a reads and is what §6h's resume path
-hands back. Every launch attempt gets a fresh one — a retry never reuses a uuid an earlier attempt may
+Persist the UUID as lane `session` before launch; §6a and §6h use that exact transcript identity. Every launch attempt gets a fresh one — a retry never reuses a uuid an earlier attempt may
 have started, because an `agent start` that timed out can still have left a live Claude on it. Keep
 abandoned uuids in the lane's entry for the report.
 
     herdr agent start <lane> --kind claude --pane <pane> --timeout 120000 -- \
-      --model claude-opus-5-5 --effort max --permission-mode auto \
+      --model "${HERDR_EXECUTOR_MODEL:-claude-opus-5-5}" --effort "${HERDR_EXECUTOR_EFFORT:-max}" --permission-mode auto \
       --settings '{"ultracode":false}' --session-id <uuid>
 
 Use the command as written: the prepared shell resolves the LangWatch wrapper, the recorded UUID
-identifies the transcript, and 120 s allows for MCP startup. Opus 5.5/max and `ultracode:false`
+identifies the transcript, and 120 s allows for MCP startup. The selected profile and `ultracode:false`
 are fixed; unavailable model means stop, not downgrade. Keep `--permission-mode auto`, whose
 dialogs are handled by §6g; it is not a filesystem sandbox. No bypass flags, alternate permission
 mode, or permission-widening settings/`--allowedTools`. No positional/headless prompt: verify an
@@ -123,19 +116,13 @@ empty input box before priming. No `--continue`/`--resume` on first launch, cust
 prompt, absolute executable path, or Claude-owned worktree; use native Agent delegation inside
 the recorded Herdr checkout.
 
-**The three lines §3 owes the user, in this driver's words:**
-
-- agent and approval posture — `Claude Code（Claude Opus 5.5，effort max，经项目 LangWatch wrapper
-  启动；命令名 dispatch-codex 只是兼容保留）。审批保持开启：--permission-mode auto，不加任何权限绕过；
-  需要确认的调用会在 pane 里弹出，由监督循环按 §6g 处理（lane 会停到下一轮 sweep），越出本 lane
-  checkout 的一律交给你。auto 不是沙箱，worktree 是唯一隔离`（`--no-yolo` 就是这个唯一姿态，`--yolo`
-  已在 §1 拒绝）;
-- how the lane is driven — `普通 prompt 启动，后台工具或子 Agent 的结果可触发续跑；确实空闲且未完成
-  时由主控读取 progress.md 接续。默认 15 分钟兜底，持续正常推进可延至 30 分钟，需要恢复时缩至
-  5 分钟（§6c）；完成通知可提前触发检查，静默停住可能等到下一次巡检。当前不启用原生 /goal`;
-- limits — `所有 lane 共用本机同一个 Claude 官方登录账号，用量限额共享，可能同时卡住所有 lane；本
-  driver 读不到机器可读的限流状态，被限流的 lane 表现为停止推进，由防空转计数（§6d）升级给你。上下文
-  占用没有可靠数值（used_pct 恒为 null），监督循环不按百分比主动压缩`.
+**§3 user disclosure, three lines:**
+- 执行：记录本组实际选定的 Claude 模型／effort，使用 LangWatch wrapper；兼容命令名不变。
+- 权限：auto，禁止 bypass；主管按 §6g 处理已授权范围内审批，越界交给用户。
+  worktree 是代码隔离而非 OS 沙箱；`--no-yolo` 保持此姿态，`--yolo` 被拒绝。
+- 续跑：普通 prompt，后台结果触发续跑；空闲未完成时读 progress 再续跑。兜底默认 15 分钟，
+  正常推进可延至 30 分钟、恢复时缩至 5 分钟。账号限额共享，无可靠限流或上下文百分比，
+  不启用 /goal，不按 used_pct（恒为 null）压缩。
 
 **Then verify readiness yourself.** `agent start` returning `agent_started` with
 `agent_status: idle` and `interactive_ready: true` is herdr's reading of the screen, not proof the
@@ -147,7 +134,7 @@ detection reads Claude's startup screens is unverified. Read the pane:
 - A workspace-trust dialog is expected on a fresh worktree (unverified wording): accept it for the
   lane's own checkout with `send-keys` matching the option displayed — never a remembered key — then
   re-read.
-- Any other dialog, a login prompt, or a model other than Opus 5.5 on screen → answer nothing on the
+- Any other dialog, a login prompt, or a model conflicting with the frozen profile → answer nothing on the
   user's behalf: stop the lane and report it with the text quoted.
 - Only once Claude's input box is visible, empty and idle is the lane ready for input.
 
@@ -165,9 +152,8 @@ A missing transcript means priming may not have landed: inspect the pane and res
 before resending, at most once. Long turns and pending native subagents are ordinary work;
 only a truly idle unfinished lane needs continuation (§6c/§6d).
 
-**Native `/goal` remains disabled.** The user allowed its lightweight evaluator but then asked to
-stop adaptation and begin business work. This driver still uses plain prompts: set no goal, do
-not change `ANTHROPIC_DEFAULT_HAIKU_MODEL`, and do not start another goal smoke test as a prerequisite.
+**Native `/goal` remains disabled.** Use plain prompts; do not introduce an evaluator or extra
+model smoke test as a prerequisite.
 
 **Relaunching an exited lane** (§6b: the name resolves to nothing) is not a fresh launch: follow
 §6h's resume path — the recorded uuid back through `--resume`, on a pane confirmed to be at a bare

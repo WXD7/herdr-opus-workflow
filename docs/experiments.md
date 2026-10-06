@@ -1,0 +1,85 @@
+# 配置实验（v1.3 开发版）
+
+白宦成 / Bestony 的四文档仍负责规划、执行、监督与独立验收。新增的是它的配置、
+队列和证据接口；没有再建一套模型调度提示词，也不要求用本 workflow 开发本项目。
+
+## 一次准备
+
+在仓库根运行（Python 3.13、zsh；服务验证另需 lsof）：
+
+```sh
+./scripts/start-claude.sh --experiments --allow-repo /absolute/business-repo serve
+```
+
+打开输出的本地 URL，将 `token_file` 文件的内容填入访问令牌框。令牌只保存在本机
+私有目录／浏览器当前会话，不提交 Git。服务只监听 loopback。再次启动服务仍可读取原草稿。
+配置服务不调用模型；不连接 Herdr 也能配置、排队、比较已有结果。
+
+在**真实 Herdr 的普通 shell pane**中连接一次确定性派发器：
+
+```sh
+/absolute/workflow/scripts/start-claude.sh --experiments --allow-repo /absolute/business-repo worker --session YOUR_HERDR_SESSION --capacity 4
+```
+
+两条命令必须指向同一个 workflow / `--state-dir`；该参数放在子命令之前。
+先按 [setup.md](setup.md) 配好该版本的 LangWatch `private/endpoint` 与 `ingest-key`。
+worker 不创建模型心跳；用本地 CLI 检查有变化的运行状态。关闭 worker 暂停派发／采集，
+不等于停止已经运行的 Claude。不要伪造 `HERDR_ENV` 或使用旧业务 pane 的身份。
+
+## 配置和运行
+
+1. 填业务 Git 根目录、代码 ref、同一份任务与验收标准。配置独立验收命令，使用 argv 数组。
+2. 保留一组，或新增任意多组；选择明确的模型 ID、effort、四文档 Git ref。
+   当前支持 Opus 5.5、Fable 5；不使用浮动 alias，不在不可用时降级。账号可用性需实跑确认。
+3. 子 Agent 开关、递归深度、并发上限单独设置。同一组主管、lane 和原生子 Agent 继承组配置。
+   组数、同时运行组数、worker 全局 capacity 和原生子代上限不是同一个数字。
+4. 保存可见草稿，然后“冻结配置并开始”。无 worker 时显示排队，绝不显示假运行。
+5. 比较各组的共同验收、分支／commit、diff、耗时、观察到的模型／effort、用量覆盖和人工指令。
+   失败及未知保留，不自动评选。没有检查命令／干净提交时保持待核对，不能假称已通过。
+
+本地自然语言语法示例：`复制 A 为 D；D 用 Fable 5 medium；并行 2 组`。
+也支持 `A 用 workflow workflow-v1.2.0`、`B 用 关闭子代理`、`删除 C组`。
+整句解析失败就不应用其中一部分；复杂语言由 Dot 映射为可见的结构化操作。
+模型选择不是可用性探测，不调用模型替用户猜配置。
+
+未修改的历史文档若固定 Opus/max，只允许其原配置。其他 harness 的旧 ref 会明确拒绝。
+自定义提示词版本请在本 workflow 仓库提交到单独分支，再在“四文档版本”中选择；
+不要修改已冻结目录。运行记录分别保存所选规则的 SHA-256 与当前适配器的版本／哈希。
+旧 ref 使用当前适配器运行，不是旧环境的完整重演。
+
+## 代码、数据和端口
+
+每组从同一 Git commit 创建独立 worktree／分支，拥有 data、tmp、cache、build、lanes
+目录及会话 UUID。不复制 `.env`、登录或忽略的依赖。程序通过 `HERDR_DATA_DIR`、
+`HERDR_BUILD_DIR`、`TMPDIR` 等使用这些目录；数据库必须显式指向本组位置。
+worktree 不是容器，不阻止应用硬编码公共文件或数据库，接入项目时须核对实际数据路径。
+
+配置服务配方，例如：
+
+```json
+[{"name":"web","argv":["python3","-m","http.server","{port}","--bind","127.0.0.1"],"port_env":"WEB_PORT","health_path":"/","preferred_port":0}]
+```
+
+组内依赖就绪后，执行冻结目录的 `scripts/experiment.py service-start`。
+完成后界面的“启动预览服务”使用同一资源管理器；“停止预览”只停止本组核实所有权的服务。
+配方里的 `{backend.url}`、`{backend.port}`、`{data}`、`{cwd}` 也可替换。
+分配结果写入 `service-environment.json`，后续 wrapper 自动继承；已运行应用需读取结果再启动。
+
+程序先保留可用端口，再交给服务，检查监听进程归属和 HTTP 健康；外部程序抢先占用时
+最多重试整组配方三次。通过 PID、进程创建标识及进程组核对所有权，不按端口杀进程。
+端口分配、重试、回收不调用模型。需要自定义启动 argv 的应用须提供配方；不会猜 npm 命令。
+不同组依赖可并行，单组服务顺序应按其依赖配置。
+
+## 监督和恢复
+
+Dot、UI 指令都只发给所选组主管，每 15 分钟最多一次发送机会；发送前记录，
+不确定结果不重发。只在核对身份且可见输入为空时发送，不代答权限窗口。
+主管仍按四文档处理常规决定。Astra 每次复盘需先获范围授权；事件本身不是授权。
+
+运行时限触发主管中断，不是账户 token 硬上限。停止主管不能证明原生子代／独立 lane
+都已退出，因此此类组保持“需要核对”并占用槽位，不悄悄继续耗用新的并发。
+冻结中断会记录失败及已创建目录；不会复用半成品会话。保留证据后复制配置创建新任务。
+
+配置和适配器哈希用于版本溯源／防误混，并非抵抗本机用户修改的安全签名。
+共同检查是独立执行的命令及基线测试文件变更检查，不是自动证明业务正确的完整质量评审。
+精确父会话下的原生子代日志可以采集；未记载的父子边、effort、费用和缺失子代仍为未知。

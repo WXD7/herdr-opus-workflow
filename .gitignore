@@ -13,6 +13,7 @@
 /observability/langwatch/smoke/
 /observability/langwatch/project.json
 **/private/
+**/private
 **/node_modules/
 **/vendor/
 **/__pycache__/

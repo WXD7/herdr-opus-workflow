@@ -23,6 +23,13 @@ the compact probe is the whole evidence: do not re-read long files that have not
 whole command outputs, and do not reload this file or the driver while their full text is still in
 the session's context.
 
+With a frozen experiment context, each group completes the same whole task independently.
+Keep acceptance and the base commit fixed; never share another group's implementation or
+quietly weaken its tests. Record actual model/effort separately from requested settings.
+Use configured service leases for ports; do not ask a model to resolve collisions. Completion
+reports trigger common checks, not automatic ranking or rule promotion. Dot notifications are
+status evidence, not permission; retain the original scoped decision and recovery rules.
+
 ## The probe contract
 
 §6c's table and everything below are written against the fields the driver's §6a promises. A driver

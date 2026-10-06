@@ -184,6 +184,10 @@ cleanup will leak:
 
     herdr workspace list | jq -r '.result.workspaces[].workspace_id'   # before
     herdr worktree create --cwd <repo> --branch <branch> --base <base> --label <lane> --no-focus
+
+For an experiment group, add `--path "$HERDR_LANE_ROOT/<lane>"`; keep all lane checkouts,
+data and evidence within that group's recorded roots. Group count and group concurrency are
+separate from this Skill's lane ceiling. Reuse the frozen shared acceptance; never relax it.
     herdr workspace list | jq -r '.result.workspaces[].workspace_id'   # after — diff for new ids
 
 `herdr workspace create --cwd <cwd>` is **not** an alternative here — it would point a lane at an

@@ -1,13 +1,13 @@
 ---
 name: dispatch-codex
-description: Dispatch tasks to Claude Opus 5.5/max agents in Herdr worktrees, with supervisor-authored plans, independent acceptance and confirmed delivery. The name dispatch-codex is retained for compatibility; it never launches Codex. Use for /herdr-dispatch:dispatch-codex, explicit Herdr task dispatch or parallel lanes, and --resume of an existing Claude run.
+description: Dispatch tasks to configured Claude agents in Herdr worktrees, with supervisor-authored plans, independent acceptance and confirmed delivery. The compatibility name dispatch-codex never launches Codex. Use for /herdr-dispatch:dispatch-codex, Herdr dispatch and resuming an explicitly identified run.
 argument-hint: '<task-1>; <task-2>; … [--lanes N] [--base <ref>] [--no-yolo] [--draft] [--no-pr] [--resume] [--no-loop]'
 allowed-tools: Read, Write, Edit, Glob, Grep, TodoWrite, AskUserQuestion, Skill, Bash(herdr:*), Bash(git:*), Bash(gh:*), Bash(jq:*), Bash(python3:*), Bash(mkdir:*), Bash(ls:*), Bash(test:*), Bash(date:*), Bash(mv:*), Bash(cat:*), Bash(printf:*)
 ---
 
 # Dispatch tasks to Claude agents under Herdr
 
-The supervisor plans, delegates, verifies and delivers; Claude Opus 5.5/max lanes implement in
+The supervisor plans, delegates, verifies and delivers; configured Claude lanes implement in
 worktrees. Compatibility names do not launch Codex. Native /goal remains disabled (§5c).
 Routine decisions belong to the supervisor; delegated exceptions follow §3. Descendants inherit
 its boundaries and report via parents. Completion requires acceptance and agreed delivery.
@@ -42,8 +42,9 @@ rollback instructions are in the plugin's `WORKFLOW-VERSIONS.md`, not part of a 
    confirmed. Local-only means no push or PR. Otherwise publish only the recorded lane branch;
    never force-push, push the base, rewrite history, or merge except an explicitly confirmed local
    integration. Never run `worktree remove`; show cleanup commands for the user instead.
-5. **Keep the execution profile.** Claude Opus 5.5/max, native subagents within the task's scope,
-   no permission bypass or silent model substitution. Follow driver §5a/§5c for exact settings.
+5. **Keep the execution profile.** Default Opus 5.5/max; when `HERDR_EXPERIMENT_CONTEXT` is set,
+   its frozen group profile governs supervisor, lanes and descendants. No silent fallback,
+   permission bypass, cross-group edits or hot rule replacement. Driver §5a checks provenance.
 
 ## §1 Gate and parse
 

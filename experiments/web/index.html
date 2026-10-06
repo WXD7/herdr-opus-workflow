@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Herdr · 配置实验</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script></head>
+<body><div class="shell">
+<aside><a class="brand" href="/">Herdr <span>Workflow</span></a><div class="version">v1.3 · 配置实验</div><button id="new" class="primary">＋ 新建任务</button><nav id="experiments" aria-label="任务列表"></nav><div class="aside-note">同一任务，多种配置。<br>保留每一次运行的证据。</div></aside>
+<main><header><div><div class="eyebrow">WORKFLOW EXPERIMENTS</div><h1 id="heading">配置这次开发任务</h1></div><span id="connection" class="badge">正在连接本地服务</span></header>
+<div id="error" role="alert" hidden></div><div id="notice" role="status" hidden></div>
+<section id="auth" hidden><h2>连接本地工作区</h2><p>输入本机服务的访问令牌，或使用带令牌的本地启动链接。</p><label>本地访问令牌<input id="token" type="password" autocomplete="off"></label><button id="connect" class="primary">连接</button></section>
+<section id="editor">
+<div class="section-heading"><h2>共同任务</h2><span id="revision" class="muted">新草稿</span></div>
+<div class="form-grid"><label>任务名称<input id="title" placeholder="例如：完善律师来件闭环" maxlength="160"></label><label>项目仓库<input id="repo" placeholder="本地 Git 仓库绝对路径"></label></div>
+<div class="form-grid"><label>代码起点<input id="base" value="HEAD"></label><label>单组最长运行时间（分钟）<input id="timeout" type="number" value="120" min="1" max="1440"></label></div>
+<label>开发要求<textarea id="task" rows="3" placeholder="各组将独立完成同一个任务"></textarea></label>
+<label>共同验收标准（一行一项）<textarea id="acceptance" rows="2" placeholder="例如：来件形成可审核的处理包；未经批准不对外发送"></textarea></label>
+<details><summary>验收命令与预览服务</summary><div class="form-grid"><label>验收命令 · argv JSON<textarea id="checks" rows="4" spellcheck="false">[]</textarea><span class="hint">例如 [["python3", "-m", "unittest", "discover", "-s", "tests"]]</span></label><label>预览服务 · JSON<textarea id="services" rows="4" spellcheck="false">[]</textarea><span class="hint">端口用 {port}；跨服务地址用 {backend.url}。默认不启动服务。</span></label></div></details>
+<div class="section-heading spaced"><div><h2>配置组</h2><span class="muted">每组完成整个任务，差异相对基准显示</span></div><div class="inline"><label class="compact">同时运行 <input id="parallel" type="number" value="1" min="1"> 组</label><button id="add">＋ 新增组</button></div></div>
+<div id="groups"></div>
+<div class="language"><label for="instruction">用一句话调整配置</label><div class="inline"><input id="instruction" placeholder="复制 A 为 D；D 用 Fable 5 medium；并行 2 组"><button id="apply">应用到草稿</button></div><div class="hint">本地解析明确指令，不调用模型；Dot 也可直接提交结构化修改。</div></div>
+<div class="footer"><div class="inline"><select id="presets" aria-label="选择配置预设"><option value="">选择预设</option></select><button id="save-preset">保存预设</button></div><div class="inline"><button id="save">保存草稿</button><button id="clone" hidden>复制为新任务</button><button id="start" class="primary">冻结配置并开始</button></div></div>
+<p class="hint">运行前冻结代码起点和规则版本。最长时间触发主管中断，不是账户 token 硬上限；子进程停止需核验。Astra 复盘需另行授权。</p>
+</section>
+<section id="run" hidden><div class="section-heading"><h2>运行与结果</h2><div class="inline"><button id="refresh">刷新证据</button><button id="stop">请求停止本任务</button></div></div><div id="run-status" class="muted"></div><div id="results"></div><details><summary>冻结的配置与证据索引</summary><pre id="evidence"></pre></details><p class="hint">未知用量保留为未知。失败及取消的组也计入报告；多因素变化只比较整套配置，不自动宣布优胜者。</p></section>
+</main></div></body></html>

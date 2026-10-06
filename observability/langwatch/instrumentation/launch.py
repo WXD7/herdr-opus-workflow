@@ -121,10 +121,26 @@ def toml_string(value):
 def prepare(tool, args, check=False):
     executable = actual_binary(tool)
     cwd = effective_cwd(args)
-    if not cwd.is_relative_to(PROJECT):
+    experiment = None
+    pointer = PROJECT / 'context-pointer.json'
+    if not os.environ.get('HERDR_EXPERIMENT_CONTEXT') and pointer.is_file():
+        reference = json.loads(pointer.read_text())
+        os.environ['HERDR_EXPERIMENT_CONTEXT'] = reference['path']
+        os.environ['HERDR_EXPERIMENT_CONTEXT_HASH'] = reference['hash']
+    if os.environ.get('HERDR_EXPERIMENT_CONTEXT'):
+        sys.path.insert(0, str(PROJECT))
+        from experiments.snapshots import load_context, context_environment
+        from experiments.profile import pin_arguments
+        experiment = load_context(cwd=cwd)
+        if tool != 'claude':
+            raise ValueError('This experimental profile is a Claude executor; other harnesses require an explicit adapter')
+        args = pin_arguments(args, experiment)
+    elif not cwd.is_relative_to(PROJECT):
         raise ValueError('This wrapper is limited to ' + str(PROJECT))
     endpoint, key = read_settings()
     env = dict(os.environ)
+    if experiment:
+        env.update(context_environment(experiment, os.environ['HERDR_EXPERIMENT_CONTEXT']))
     # Parent agent telemetry must not override this worker's selected signal destination.
     for name in OTEL_KEYS:
         env.pop(name, None)
@@ -136,6 +152,11 @@ def prepare(tool, args, check=False):
     launch_id = str(uuid.uuid4())
     attrs = {'herdr.run_id': run_id, 'herdr.role': role, 'herdr.launch_id': launch_id,
              'project.repo': PROJECT.name, 'service.name': 'claude-code' if tool == 'claude' else 'codex'}
+    if experiment:
+        attrs.update({'herdr.experiment_id': experiment['experiment_id'],
+                      'herdr.group_id': experiment['group_id'], 'herdr.attempt_id': experiment['attempt_id'],
+                      'herdr.requested_model': experiment['profile']['model'],
+                      'herdr.requested_effort': experiment['profile']['effort']})
     if env.get('HERDR_LANGWATCH_SYNTHETIC') == '1':
         attrs['herdr.synthetic'] = 'true'
     env.update({

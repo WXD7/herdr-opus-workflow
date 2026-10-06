@@ -4,6 +4,13 @@
 # call; a real launch always requires a genuine Herdr pane.
 set -eu
 TASK_ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+if [[ "${1:-}" == --experiments ]]; then
+  shift
+  exec python3.13 "$TASK_ROOT/scripts/experiment.py" "$@"
+fi
+if [[ -n "${HERDR_EXPERIMENT_CONTEXT:-}" ]]; then
+  exec python3.13 "$TASK_ROOT/scripts/experiment.py" session "$@"
+fi
 PLUGIN_DIR="$TASK_ROOT/source/herdr-dispatch"
 CLAUDE_WRAPPER="$TASK_ROOT/observability/langwatch/instrumentation/bin/claude"
 RUN_ID_TOOL="$TASK_ROOT/observability/langwatch/instrumentation/run_id.py"

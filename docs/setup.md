@@ -84,3 +84,9 @@ v1.2 文档发布不代表已有 Agent 被热更新。保留旧 run 证据，用
 按原 Skill 的 `--no-loop` 或已记录 timer 停止方式控制监督；
 不要用关闭全局 Herdr server 的方式结束单个任务。
 回退操作见 [版本说明](../source/herdr-dispatch/WORKFLOW-VERSIONS.md)。
+
+## 多配置实验入口
+
+v1.3 开发分支新增同一入口的 `--experiments` 模式。它支持允许范围内的外部业务仓库，
+原独立入口仍从 demo 开始。配置 UI、真实 Herdr 派发与模型调用是三个不同状态，
+请见 [配置实验](experiments.md) 和 [Dot 连接](dot-connection.md)。
