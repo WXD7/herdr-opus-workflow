@@ -61,7 +61,11 @@ class Herdr:
             args.extend(['--env', key + '=' + value])
         result = self.call(*args)
         pane = result['root_pane']['pane_id']
-        return {'session': self.session, 'pane': pane, 'name': 'exp-' + attempt['id'][-16:]}
+        target = {'session': self.session, 'pane': pane, 'name': 'exp-' + attempt['id'][-16:]}
+        from .store import write_json
+        write_json(Path(attempt['directory']) / 'terminal-target.json', target | {
+            'attempt_id': attempt['id'], 'context_hash': attempt['context_hash']})
+        return target
 
     def start(self, target, attempt, context):
         command, _ = session_command(context, attempt['context_path'])
@@ -82,6 +86,10 @@ class Herdr:
         return agent
 
     def prompt(self, target, prompt, before_submit=None, require_activity=True):
+        if target.get('registration'):
+            checked = self.decision_target(target['registration'], target['attempt'])
+            if not checked or checked['name'] != target['name']:
+                raise ValueError('Decision recipient changed before submission')
         current = self.inspect(target)
         status = current.get('status') or current.get('state')
         if status not in ('idle', 'done'):
@@ -94,6 +102,32 @@ class Herdr:
         # Herdr rejects recognized approval dialogs again at submission time.
         flags = ('--wait', '--until', 'working', '--timeout', '5000') if require_activity else ()
         return self.call('agent', 'prompt', target['name'], prompt, *flags, timeout=10)
+
+    def decision_target(self, record, attempt):
+        from .lifecycle import processes, same_process, current_session
+        from scripts.claude_lane_state import probe
+        if record.get('herdr_session') != self.session or not record.get('pane'):
+            raise ValueError('Decision recipient has no exact Herdr session/pane registration')
+        if not same_process(record, processes().get(record['pid'])):
+            raise ValueError('Decision recipient exited or PID was reused')
+        current_session(record)
+        result = self.call('agent', 'get', record['pane'])
+        agent = result.get('agent', result)
+        pane = agent.get('pane_id') or (agent.get('pane') or {}).get('pane_id')
+        name = agent.get('name') or agent.get('agent_name')
+        if pane != record['pane'] or not name:
+            raise ValueError('Decision recipient pane identity changed')
+        if record['role'] == 'supervisor' and (name != attempt['target']['name'] or pane != attempt['target']['pane']):
+            raise ValueError('Decision parent is not this group supervisor')
+        state = agent.get('status') or agent.get('agent_status') or agent.get('state')
+        if state == 'blocked':
+            raise ValueError('Decision recipient has a native dialog; no text or approval sent')
+        if state not in ('idle', 'done'): return None
+        transcript = probe(record['session'], record['cwd'], context_path=attempt['context_path'],
+                           context_hash=attempt['context_hash'])
+        if transcript['probe'] != 'ok': raise ValueError('Exact decision recipient transcript unavailable')
+        if transcript['turn_state'] != 'complete': return None
+        return {'session': self.session, 'pane': pane, 'name': name, 'registration': record, 'attempt': attempt}
 
     def stop(self, target):
         self.inspect(target)
@@ -127,7 +161,7 @@ def task_prompt(spec, attempt):
             '完成时将现有最终报告另写到 ' + attempt['outcome_path'] +
             '，JSON 字段为 status(completed/failed)、summary、dispatch_state_path（本 run 的原 state.json 绝对路径）。'
             '此文件只触发独立检查，不代替验收。 --base ' + shlex.quote(attempt['branch']) +
-            ' --lanes ' + str(min(3, attempt['profile']['max_subagents'])))
+            ' --lanes 3')  # Original lane ceiling; independent of native child concurrency.
 
 
 def empty_input(value):

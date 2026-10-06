@@ -364,12 +364,19 @@ class Engine:
         report = Path(attempt['outcome_path'])
         timely_report = report.is_file() and report.stat().st_mtime <= attempt['started_at'] + item['config']['timeout_minutes'] * 60
         if status in ('idle', 'done') and timely_report and not attempt.get('acceptance_attempted') and not attempt.get('stop_requested'):
-            attempt.update(status='checking', acceptance_attempted=True)
-            self._checkpoint(item)
-            self._accept(item, attempt)
-            if attempt.get('result_status'):
-                self._shutdown(item, attempt, adapter)
-            return
+            from .decisions import Mailbox
+            if attempt['workflow'].get('decision_transport') == 'parent-v1' and any(
+                    not v.get('consumed_at') for v in Mailbox(attempt).all()):
+                record_issue(attempt, 'decision', 'Completion report has unresolved decisions; not accepted')
+                if not stop_due:
+                    return
+            else:
+                attempt.update(status='checking', acceptance_attempted=True)
+                self._checkpoint(item)
+                self._accept(item, attempt)
+                if attempt.get('result_status'):
+                    self._shutdown(item, attempt, adapter)
+                return
         if stop_due:
             if not attempt.get('stop_attempted'):
                 attempt.update(stop_attempted=True, stop_reason='timeout' if timed_out else 'requested', status='cancelling')
@@ -381,6 +388,10 @@ class Engine:
                     adapter.stop(target)
                 self._shutdown(item, attempt, adapter)
             return
+        if attempt.get('prompt_attempted'):
+            from .decisions import route
+            if route(self, item, attempt, adapter):
+                return
         if (attempt['status'] != 'needs_attention' and not attempt['prompt_attempted']
                 and attempt.get('prompt_stage', 'not_started') == 'not_started' and status in ('idle', 'done')):
             attempt['prompt_stage'] = 'preflight'
@@ -569,7 +580,7 @@ class Engine:
                            'checkout', 'head', 'diffstat', 'acceptance', 'reported_summary', 'configuration_valid',
                            'observed', 'comparison_eligible', 'usage', 'error', 'evidence_gap', 'evidence_path', 'interventions',
                            'prompt_stage', 'prompt_attempted', 'prompt_submitted', 'prompt_submitted_at', 'stop_reason',
-                           'business_status', 'result_status', 'cleanup', 'shutdown_issue', 'completion_wakes', 'issues')}
+                           'business_status', 'result_status', 'cleanup', 'shutdown_issue', 'completion_wakes', 'decisions', 'issues')}
                            | {'elapsed_seconds': round(a.get('ended_at', time.time()) - a['started_at'], 2) if a.get('started_at') else None,
                               'services': self.services._read(a['id'])}
                            for a in item['attempts']],

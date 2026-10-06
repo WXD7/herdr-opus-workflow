@@ -41,9 +41,18 @@ def register(context, context_path, args, executable):
     current = processes().get(os.getpid())
     if not current:
         raise ValueError('Cannot register process identity before launch')
+    terminal_path = Path(context_path).parent / 'terminal-target.json'
+    terminal_session = os.environ.get('HERDR_SESSION')
+    if terminal_path.is_file():
+        terminal = json.loads(terminal_path.read_text())
+        if terminal['attempt_id'] != context['attempt_id'] or terminal['context_hash'] != digest(context):
+            raise ValueError('Terminal registration belongs to another group')
+        terminal_session = terminal['session']
     record = {**current, 'command': str(Path(executable).resolve()), 'session': sid,
               'attempt_id': context['attempt_id'], 'context_hash': digest(context),
               'cwd': str(Path.cwd().resolve()), 'registered_at': time.time(),
+              'pane': os.environ.get('HERDR_PANE_ID'), 'herdr_session': terminal_session,
+              'parent_session': None if sid == context['supervisor_session'] else context['supervisor_session'],
               'role': 'supervisor' if sid == context['supervisor_session'] else 'lane'}
     write_json(Path(context_path).parent / 'processes' / (str(uuid.uuid4()) + '.json'), record)
 
@@ -70,6 +79,17 @@ def registrations(attempt):
 
 def same_process(record, current):
     return bool(current and current['started'] == record['started'])
+
+
+def current_session(record):
+    """CLI live PID registry catches /new or a changed session in the same process/pane."""
+    path = Path.home() / '.claude/sessions' / (str(record['pid']) + '.json')
+    if not path.is_file() or path.is_symlink() or path.stat().st_size > 16000:
+        raise ValueError('Claude live session registry unavailable; no guessed recipient')
+    active = json.loads(path.read_text())
+    if (active.get('pid') != record['pid'] or active.get('sessionId') != record['session']
+            or Path(active.get('cwd', '')).resolve() != Path(record['cwd']).resolve()):
+        raise ValueError('Claude live session changed; decision delivery stopped')
 
 
 def track(attempt, table=None):

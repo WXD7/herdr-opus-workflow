@@ -48,7 +48,8 @@ def workflow_snapshot(destination, selected, runtime_root=ROOT):
     if adapter == 'legacy-fixed-opus':
         if 'claude-opus-5-5' not in driver:
             raise ValueError('This historical revision uses another engine; select an explicitly adapted revision')
-        if any(p[k] != DEFAULT_PROFILE[k] for k in DEFAULT_PROFILE if k != 'workflow_ref'):
+        legacy_profile = DEFAULT_PROFILE | {'max_subagents': 20}
+        if any(p[k] != legacy_profile[k] for k in legacy_profile if k != 'workflow_ref'):
             raise ValueError('This unchanged historical rule set fixes Opus 5.5/max and the original child limits. '
                              'Use its original profile or select the new parameterized rule revision.')
     destination.mkdir(parents=True, mode=0o700)
@@ -79,6 +80,7 @@ def workflow_snapshot(destination, selected, runtime_root=ROOT):
     provenance = {'ref': ref, 'commit': sha, 'dirty': dirty, 'four_document_sha256': hashes,
                   'adapter': adapter,
                   'completion_transport': 'disk-v1' if b'experiment-completion: disk-v1' in content[RULE_FILES[2]] else 'legacy-terminal',
+                  'decision_transport': 'parent-v1' if b'experiment-decisions: parent-v1' in content[RULE_FILES[-1]] else 'manual',
                   'adapter_commit': commit(runtime_root, 'HEAD'),
                   'adapter_dirty': bool(git(runtime_root, 'status', '--porcelain')),
                   'adapter_sha256': digest(adapter_hashes), 'adapter_files': adapter_hashes,

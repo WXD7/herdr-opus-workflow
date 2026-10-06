@@ -63,7 +63,7 @@ environment is set, and everything after it relies on the pane's shell keeping i
 - exports the LangWatch labels (`HERDR_LANGWATCH_RUN_ID`, `HERDR_LANGWATCH_ROLE`) and puts the
   project's existing LangWatch wrapper first on `PATH`, then checks that `claude` resolves to it;
 - exports the frozen group's child model, effort and depth/concurrency ceilings (legacy default:
-  Opus 5.5/max, depth 3, concurrency 20). Native Agent use stays within the lane boundary; no custom
+  Opus 5.5/max, depth 3, concurrency 3). These are ceilings, not required fan-out. Native Agent use stays within the lane boundary; no custom
   role prompts or required fan-out. When this group explicitly disables native children, the
   wrapper denies Agent/Task tools. The original supervisor/lane workflow remains intact.
 
@@ -343,14 +343,23 @@ Worker publishing, force operations, sudo, credentials and outside-scope actions
 route them under §3. Supervisor publishing remains after independent acceptance. A platform denial
 or unavailable approval verdict cannot be retried through another tool, path or permission mode.
 
-Routine decisions follow confirmed defaults; authorized reviewers handle only delegated exceptions.
-New scope, reduced acceptance or excess budget needs the user. Use the intended business cwd and
-exact evidence directories, not broad HOME access. v1.2 includes no automatic approval/wake bridge;
-use the existing interface only within its authorization. A future channel
-must bind run/session, workflow and exact request, reject changed/expired answers and consume once.
-Children inherit no supervisor approval. Timeout/error preserves native approval; a late answer
-file is not proof of consumption. Notification, model wake and consumption are separate. Never
-infer a live wait from LangWatch blocked_on_user or add another model-polling system.
+Routine decisions follow confirmed defaults; new scope, weaker acceptance or extra budget needs
+the authorized owner. Children inherit no supervisor approval; never infer permission from telemetry.
+
+<!-- experiment-decisions: parent-v1 -->
+In new frozen experiments, the existing dispatcher routes registered lane requests to this exact
+group supervisor. On a decision wake, run `python3 "$HERDR_WORKFLOW_ROOT/scripts/experiment.py"
+decision inbox`; it records receipt. For `routine`, decide within §3 and use `decision answer
+--id <id> --request-hash <hash> --text '<choice and reason>'`. Do not call AskUserQuestion for an
+already-authorized engineering choice. Then end the turn if only waiting for lanes; the dispatcher
+delivers the answer to that child, which must `decision consume` once before proceeding.
+`authority` cannot be answered through this transport: surface the exact request to the authorized
+owner/native permission interface. No automatic permission approval or Dot cloud wake is claimed.
+Changed/expired requests, changed recipients and uncertain sends stop automatic delivery; preserve
+the recorded failure. Sent, parent-received, answered and child-consumed are separate evidence.
+Native Agent descendants report to their native caller, not directly to the group supervisor;
+their caller records the result and resumes/delegates follow-up via the native harness. No extra
+model timer, role prompt framework or recursive observer. Historical snapshots keep their transport.
 
 Explicit API errors deserve prompt diagnosis after proving no operation is still running; verify
 side effects before one justified continuation. Do not replay blindly or treat normal long work

@@ -29,11 +29,20 @@ def main(argv=None):
     session = commands.add_parser('session'); session.add_argument('--check', action='store_true')
     session.add_argument('agent_args', nargs=argparse.REMAINDER)
     commands.add_parser('profile-env')
+    decision = commands.add_parser('decision', help='Current registered session: exchange scoped decisions with its parent')
+    decision.add_argument('action', choices=['request', 'inbox', 'answer', 'consume'])
+    decision.add_argument('--key'); decision.add_argument('--id'); decision.add_argument('--request-hash')
+    decision.add_argument('--kind', choices=['routine', 'authority'], default='routine')
+    decision.add_argument('--text')
     commands.add_parser('service-start', help='Start only the current frozen group’s configured services')
     commands.add_parser('service-stop', help='Stop only the current frozen group’s owned services')
     connection = commands.add_parser('connection', help='Generate a local MCP plugin with explicit roots; never prints the token')
     connection.add_argument('--write-plugin', action='store_true')
     args = parser.parse_args(argv)
+    if args.command == 'decision':
+        from .decisions import command
+        print(json.dumps(command(args), ensure_ascii=False, indent=2))
+        return
     if args.command in ('service-start', 'service-stop'):
         context = load_context()
         local = Engine(context['state_root'])

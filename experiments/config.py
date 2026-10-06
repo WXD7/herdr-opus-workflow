@@ -10,7 +10,7 @@ EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 RULE_FILES = ('skills/dispatch-codex/SKILL.md', 'skills/_shared/plan.md',
               'skills/_shared/supervise.md', 'skills/dispatch-codex/references/driver.md')
 DEFAULT_PROFILE = {'model': 'claude-opus-5-5', 'effort': 'max', 'workflow_ref': 'working-tree',
-                   'subagents': True, 'max_depth': 3, 'max_subagents': 20}
+                   'subagents': True, 'max_depth': 3, 'max_subagents': 3}
 
 
 def digest(value):

@@ -39,7 +39,7 @@ export CLAUDE_CODE_SUBAGENT_MODEL="$MODEL"
 export CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
 export CLAUDE_CODE_EFFORT_LEVEL="$EFFORT"
 export CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=3
-export CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=20
+export CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=3
 
 # Make the supervisor identity available to the original Skill's state file.
 # Exact resume keeps its identity; ambiguous pickers cannot supply a reliable mapping.

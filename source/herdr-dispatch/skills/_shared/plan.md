@@ -256,8 +256,15 @@ re-nudges (§6c `idle_incomplete`) it is the only thing that tells the next nudg
 the driver may strengthen this paragraph — never weaken it.
 
 In a frozen experiment (`HERDR_EXPERIMENT_CONTEXT` set), the brief ends with:
-> Write `.dispatch/DONE`, then finish your turn. The existing dispatcher observes the registered
-> lane and wakes the supervisor once; do not type a notify-back into another agent's composer.
+> Write `.dispatch/DONE`, then finish your turn; the existing dispatcher wakes the supervisor once.
+> For an unresolved in-scope choice, run `python3 "$HERDR_WORKFLOW_ROOT/scripts/experiment.py"
+> decision request --key <stable-key> --kind routine --text '<question, options and recommendation>'`
+> once, record its ID/hash in progress, and end the turn without DONE or AskUserQuestion. On reply,
+> use `decision inbox`, then `decision consume --id <id> --request-hash <hash>` before continuing.
+> Reuse the same key after an uncertain write; never create a second request for the same blocker.
+> Native children return decision-needed via the native result to their immediate caller; that
+> caller decides or escalates once. Never guess another child's UUID or poll through model calls.
+> Permission/scope/budget issues use `--kind authority`; this channel cannot approve them.
 Use this instead of the following terminal notify-back; do not combine the two transports.
 
 Outside experiments, the notify-back rings the orchestrator instead of sitting undiscovered

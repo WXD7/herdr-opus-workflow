@@ -63,7 +63,7 @@ export CLAUDE_CODE_SUBAGENT_MODEL=claude-opus-5-5
 export CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
 export CLAUDE_CODE_EFFORT_LEVEL=max
 export CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=3
-export CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=20
+export CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=3
 export PATH="$_lw_wrapper_bin:$PATH"
 rehash
 if [[ "$(command -v claude)" != "$_lw_wrapper_bin/claude" ]]; then

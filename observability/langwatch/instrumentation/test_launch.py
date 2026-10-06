@@ -126,7 +126,7 @@ class LaunchBoundaryTest(PrivateFixture):
                    'CLAUDE_CODE_SUBAGENT_MODEL_FORCE': '1',
                    'CLAUDE_CODE_EFFORT_LEVEL': 'max',
                    'CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH': '3',
-                   'CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS': '20'}
+                   'CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS': '3'}
         with patch.dict(os.environ, profile):
             _, _, env, context, _ = launch.prepare('claude', [], check=True)
         for key, value in profile.items():
