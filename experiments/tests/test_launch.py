@@ -11,9 +11,17 @@ from unittest.mock import patch
 from experiments.cli import main
 from experiments.engine import Engine
 from experiments.launch import prepare
+from experiments.store import Store
 
 
 class LaunchTests(unittest.TestCase):
+    def test_existing_private_store_is_opened_without_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch('experiments.store.os.chmod') as chmod, patch.object(Path, 'mkdir') as mkdir:
+                Store(directory)
+            chmod.assert_not_called()
+            mkdir.assert_not_called()
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

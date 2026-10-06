@@ -28,8 +28,10 @@ def write_json(path, value):
 class Store:
     def __init__(self, root):
         self.root = Path(root).expanduser().resolve()
-        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(self.root, 0o700)
+        if not self.root.is_dir():
+            self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if self.root.stat().st_mode & 0o777 != 0o700:
+            os.chmod(self.root, 0o700)
 
     @contextlib.contextmanager
     def lock(self, name='state', blocking=True):

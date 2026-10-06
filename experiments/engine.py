@@ -139,7 +139,8 @@ class Engine:
                                'context_hash': digest(context), 'runtime_env': env, 'workflow': provenance,
                                'supervisor_session': session, 'telemetry_run_id': context['telemetry_run_id'],
                                'outcome_path': str(directory / 'outcome.json'), 'observed': {'model': None, 'effort': None},
-                               'launch_attempted': False, 'prompt_attempted': False, 'interventions': []}
+                               'launch_attempted': False, 'prompt_attempted': False,
+                               'prompt_submitted': False, 'prompt_stage': 'not_started', 'interventions': []}
                     item['attempts'].append(attempt)
                     self.store.save('experiments', eid, item)
                 item['status'] = 'queued'
@@ -205,6 +206,8 @@ class Engine:
             item['status'] = 'completed' if all(s == 'completed' for s in states) else 'finished_with_issues'
             item.setdefault('ended_at', time.time())
             self.store.event('experiment.completed', item['id'], detail={'status': item['status']})
+        elif any(s in ('needs_attention', 'blocked') for s in states):
+            item['status'] = 'needs_attention'
         elif any(s in ACTIVE for s in states):
             item['status'] = 'running'
 
@@ -243,7 +246,7 @@ class Engine:
                             self.store.event('experiment.failed', item['id'], detail={'reason': item['error']})
                     except BlockingIOError: pass
                     continue
-                if item['status'] not in ('queued', 'running'):
+                if item['status'] not in ('queued', 'running', 'needs_attention'):
                     continue
                 self._checkpoint(item)
                 for attempt in item['attempts']:
@@ -288,7 +291,12 @@ class Engine:
                 self._checkpoint(item)
 
     def _observe(self, item, attempt, adapter):
-        if attempt['status'] == 'needs_attention' and not attempt.get('stop_requested') and not any(x['status'] == 'pending' for x in attempt['interventions']):
+        elapsed = time.time() - attempt.get('started_at', time.time())
+        timed_out = elapsed >= item['config']['timeout_minutes'] * 60
+        stop_due = attempt.get('stop_requested') or timed_out
+        if stop_due and attempt.get('stop_attempted'):
+            return  # One stop attempt, including uncertain failures; never resend keys.
+        if attempt['status'] == 'needs_attention' and not stop_due and not any(x['status'] == 'pending' for x in attempt['interventions']):
             return  # Preserve uncertain outcomes for explicit inspection, never auto-resubmit.
         if attempt['status'] == 'checking':
             attempt.update(status='needs_attention', error='Interrupted acceptance check; inspect evidence before resuming')
@@ -302,11 +310,9 @@ class Engine:
         state = adapter.inspect(target)
         status = state.get('status') or state.get('state')
         attempt['herdr_status'] = status
-        elapsed = time.time() - attempt.get('started_at', time.time())
-        timed_out = elapsed >= item['config']['timeout_minutes'] * 60
-        if attempt.get('stop_requested') or timed_out:
+        if stop_due:
             if not attempt.get('stop_attempted'):
-                attempt.update(stop_attempted=True, status='cancelling')
+                attempt.update(stop_attempted=True, stop_reason='timeout' if timed_out else 'requested', status='cancelling')
                 self._checkpoint(item)
                 adapter.stop(target)
                 self.services.stop(attempt['id'])
@@ -315,9 +321,14 @@ class Engine:
                 self.store.event('attempt.blocked', item['id'], attempt['id'], {'reason': attempt['error']})
             return
         if attempt['status'] != 'needs_attention' and not attempt['prompt_attempted'] and status in ('idle', 'done'):
-            attempt['prompt_attempted'] = True
+            attempt['prompt_stage'] = 'preflight'
             self._checkpoint(item)
-            adapter.prompt(target, task_prompt(item['config'], attempt))
+            def before_submit():
+                attempt.update(prompt_attempted=True, prompt_stage='submitting')
+                self._checkpoint(item)
+            adapter.prompt(target, task_prompt(item['config'], attempt), before_submit=before_submit)
+            attempt.update(prompt_submitted=True, prompt_stage='submitted', prompt_submitted_at=time.time())
+            self.store.event('attempt.dispatched', item['id'], attempt['id'])
             return
         for action in attempt['interventions']:
             if action['status'] != 'pending':
@@ -327,11 +338,16 @@ class Engine:
             action['status'] = 'attempted'
             self._checkpoint(item)
             try:
-                adapter.prompt(target, action['text']); action['status'] = 'submitted'
+                def before_intervention():
+                    action['submission_attempted'] = True
+                    self._checkpoint(item)
+                adapter.prompt(target, action['text'], before_submit=before_intervention); action['status'] = 'submitted'
+                # An explicit intervention may replace a preflight-blocked first task;
+                # never follow it by silently submitting the original task as a second turn.
                 attempt.update(status='running', prompt_attempted=True)
                 attempt.pop('error', None)
             except Exception as error:
-                action.update(status='uncertain', error=str(error)[:800])
+                action.update(status='uncertain' if action.get('submission_attempted') else 'not_submitted', error=str(error)[:800])
             return
         if status == 'blocked':
             attempt['status'] = 'blocked'
@@ -434,7 +450,8 @@ class Engine:
                 'base_commit': item.get('base_commit'), 'config_hash': item.get('config_hash'),
                 'groups': [{k: a.get(k) for k in ('id', 'group_id', 'label', 'profile', 'status', 'branch',
                            'checkout', 'head', 'diffstat', 'acceptance', 'reported_summary', 'configuration_valid',
-                           'observed', 'comparison_eligible', 'usage', 'error', 'evidence_gap', 'evidence_path', 'interventions')}
+                           'observed', 'comparison_eligible', 'usage', 'error', 'evidence_gap', 'evidence_path', 'interventions',
+                           'prompt_stage', 'prompt_attempted', 'prompt_submitted', 'prompt_submitted_at', 'stop_reason')}
                            | {'elapsed_seconds': round(a.get('ended_at', time.time()) - a['started_at'], 2) if a.get('started_at') else None,
                               'services': self.services._read(a['id'])}
                            for a in item['attempts']],

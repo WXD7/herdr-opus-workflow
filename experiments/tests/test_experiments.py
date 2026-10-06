@@ -97,7 +97,9 @@ class FakeHerdr:
         return {'session':self.session,'pane':a['id'],'name':a['id']}
     def start(self,*args): pass
     def inspect(self,t): return {'status':self.states[t['name']]}
-    def prompt(self,t,text): self.prompts.append((t['name'],text));self.states[t['name']]='working'
+    def prompt(self,t,text,before_submit=None):
+        if before_submit: before_submit()
+        self.prompts.append((t['name'],text));self.states[t['name']]='working'
     def stop(self,t): self.stops.append(t['name'])
 
 

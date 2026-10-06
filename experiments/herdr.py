@@ -6,7 +6,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from .snapshots import context_environment, session_command
+from .snapshots import session_command
 
 
 class Herdr:
@@ -20,20 +20,41 @@ class Herdr:
         self.call('pane', 'current', '--pane', self.caller)
         self.call('agent', 'list')
 
-    def call(self, *args, timeout=40):
-        out = subprocess.run(['herdr', '--session', self.session, *args],
-                             capture_output=True, text=True, timeout=timeout)
+    def call(self, *args, timeout=40, output='json'):
+        operation = ' '.join(args[:2])
+        if output not in ('json', 'text') or output == 'text' and args[:2] not in (('agent', 'read'), ('pane', 'read')):
+            raise ValueError('Text output is only supported for terminal reads')
+        # Do not put arguments, prompts, environment values or terminal contents in errors.
+        # A mutation may have succeeded before a transport/decoding failure: never retry it here.
+        try:
+            out = subprocess.run(['herdr', '--session', self.session, *args],
+                                 capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f'Herdr {operation}: timed out; command outcome is unknown') from None
         if out.returncode:
-            raise RuntimeError(out.stderr.strip()[:1500] or out.stdout.strip()[:1500])
+            code = ''
+            try:
+                failure = json.loads(out.stderr.strip() or out.stdout.strip())
+                candidate = failure.get('error', {}).get('code', '')
+                if isinstance(candidate, str) and re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', candidate):
+                    code = ' (' + candidate + ')'
+            except (ValueError, AttributeError):
+                pass
+            raise RuntimeError(f'Herdr {operation}: exit {out.returncode}{code}; inspect the exact target, do not retry blindly')
+        if output == 'text':
+            return out.stdout
         try:
             value = json.loads(out.stdout)
+            if not isinstance(value, dict):
+                raise ValueError('Structured object required')
             return value.get('result', value)
         except ValueError:
-            raise RuntimeError('Unexpected Herdr response; command outcome must be inspected, not retried')
+            raise RuntimeError(f'Herdr {operation}: expected JSON, received {len(out.stdout)} characters; '
+                               'command outcome must be inspected, not retried') from None
 
     def create(self, attempt, context):
         # Supplying env when the shell is created avoids races from typing setup then a command.
-        env = context_environment(context, attempt['context_path'])
+        _, env = session_command(context, attempt['context_path'])
         env['PATH'] = str(Path(context['workflow']['runtime_root']) / 'observability/langwatch/instrumentation/bin') + os.pathsep + os.environ['PATH']
         args = ['workspace', 'create', '--cwd', attempt['checkout'], '--label', context['title_line'], '--no-focus']
         for key, value in env.items():
@@ -60,14 +81,16 @@ class Herdr:
         agent['status'] = agent.get('status') or agent.get('agent_status') or agent.get('state')
         return agent
 
-    def prompt(self, target, prompt):
+    def prompt(self, target, prompt, before_submit=None):
         current = self.inspect(target)
         status = current.get('status') or current.get('state')
         if status not in ('idle', 'done'):
             raise ValueError('Agent is not at a verified ready input; pending input/approval must be inspected')
-        visible = self.call('agent', 'read', target['name'], '--source', 'visible')
+        visible = self.call('agent', 'read', target['name'], '--source', 'visible', '--format', 'text', output='text')
         if not empty_input(visible):
             raise ValueError('Visible input is not confirmed empty; no text sent')
+        if before_submit is not None:
+            before_submit()  # Persist the send intent only after successful read-only preflight.
         # Herdr rejects recognized approval dialogs again at submission time.
         return self.call('agent', 'prompt', target['name'], prompt)
 
@@ -77,7 +100,8 @@ class Herdr:
 
     def read(self, target):
         self.inspect(target)
-        return self.call('agent', 'read', target['name'], '--source', 'recent-unwrapped', '--lines', '35')
+        return self.call('agent', 'read', target['name'], '--source', 'recent-unwrapped', '--lines', '35',
+                         '--format', 'text', output='text')
 
 
 def task_prompt(spec, attempt):
@@ -115,5 +139,5 @@ def empty_input(value):
         return False
     # Only known decorative/status footer lines may follow an empty composer.
     return all(re.fullmatch(r'[─━╭╮╰╯│\s]+', line) or
-        re.match(r'(?i)(?:\? for shortcuts|shift\+tab|auto mode|accept edits|bypass permissions|\d+% context)',line)
+        re.match(r'(?i)(?:⏵⏵\s+)?(?:\? for shortcuts|shift\+tab|auto mode|accept edits|bypass permissions|\d+% context)',line)
         for line in lines[i+1:])

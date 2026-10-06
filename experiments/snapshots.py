@@ -116,6 +116,7 @@ def context_environment(context, context_path):
     if service_file.is_file():
         env.update(json.loads(service_file.read_text()))
     env.update({'HERDR_EXPERIMENT_CONTEXT': str(context_path),
+                'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION': 'false',
                 'HERDR_EXPERIMENT_CONTEXT_HASH': digest(context),
                 'HERDR_EXPERIMENT_ID': context['experiment_id'],
                 'HERDR_EXPERIMENT_GROUP': context['group_id'],
